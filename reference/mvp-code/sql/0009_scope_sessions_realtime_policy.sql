@@ -1,0 +1,2 @@
+DROP POLICY IF EXISTS "Read sessions for realtime" ON public.sessions;
+CREATE POLICY "Read active sessions for realtime" ON public.sessions FOR SELECT TO anon, authenticated USING (status IN ('LIVE','ENDED') AND lecture_context IS NULL);

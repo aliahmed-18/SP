@@ -1,0 +1,213 @@
+// Getit — Prisma schema (starting point). Copy to server/prisma/schema.prisma.
+// Validated with `prisma validate`. Refine only if needed, and explain why.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SessionStatus {
+  LIVE
+  ENDED
+}
+
+enum ActivityType {
+  QUICK_CHECK
+  EXPLAIN
+}
+
+enum QuickCheckKind {
+  MCQ
+  TRUE_FALSE
+  NUMERIC
+}
+
+enum ActivityStatus {
+  DRAFT
+  LIVE
+  CLOSED
+  REVEALED
+}
+
+enum TopicStatus {
+  OPEN
+  ANSWERED_IN_CLASS
+  REPLIED
+}
+
+enum ExplainTag {
+  CORRECT
+  PARTIAL
+  MISCONCEPTION
+}
+
+enum TakeawayStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Instructor {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  courses      Course[]
+  sessions     Session[]
+}
+
+model Course {
+  id           String     @id @default(uuid())
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  name         String // e.g. "ITCS 444 — Mobile Development"
+  createdAt    DateTime   @default(now())
+  sessions     Session[]
+
+  @@index([instructorId])
+}
+
+model Session {
+  id               String        @id @default(uuid())
+  instructorId     String
+  instructor       Instructor    @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  courseId         String?
+  course           Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  code             String // 5 chars, unique among LIVE sessions (enforced in service + partial unique index in a SQL migration)
+  topic            String // 1–80
+  academicMode     Boolean       @default(true)
+  status           SessionStatus @default(LIVE)
+  liveActivityId   String?       @unique // the ONE live activity (null = none)
+  flaggedCount     Int           @default(0)
+  version          Int           @default(0) // bump on every change; clients compare to detect stale state
+  startedAt        DateTime      @default(now())
+  endedAt          DateTime?
+  participants     Participant[]
+  parts            Part[]
+  questions        Question[]
+  topics           Topic[]
+  activities       Activity[]
+  takeaway         Takeaway?
+
+  @@index([code])
+  @@index([instructorId, startedAt])
+}
+
+// One row per device that joined. Used for the "joined" count and limits. No identity.
+model Participant {
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  deviceHash String // sha256(deviceId + DEVICE_SALT) — never sent to any client
+  questionCount  Int      @default(0)
+  lastQuestionAt DateTime?
+  joinedAt   DateTime @default(now())
+
+  @@id([sessionId, deviceHash])
+}
+
+// "New part" splits the Q&A list (e.g. before/after the break). Part 1 is created with the session.
+model Part {
+  id           String     @id @default(uuid())
+  sessionId    String
+  session      Session    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  number       Int
+  flaggedCount Int        @default(0)
+  createdAt    DateTime   @default(now())
+  questions    Question[]
+  topics       Topic[]
+
+  @@unique([sessionId, number])
+}
+
+model Question {
+  id         String   @id @default(uuid())
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  partId     String
+  part       Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  topicId    String?
+  topic      Topic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  text       String // 1–300, already moderated
+  deviceHash String // to show "My questions" back to the same device only; never exposed
+  addressed  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+model Topic {
+  id        String      @id @default(uuid())
+  sessionId String
+  session   Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  partId    String
+  part      Part        @relation(fields: [partId], references: [id], onDelete: Cascade)
+  title     String // 1–100
+  status    TopicStatus @default(OPEN)
+  reply     String? // ≤ 2000, required when status = REPLIED
+  meTooCount Int        @default(0)
+  createdAt DateTime    @default(now())
+  questions Question[]
+  meToos    MeToo[]
+
+  @@index([sessionId])
+}
+
+model MeToo {
+  topicId    String
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  deviceHash String
+  createdAt  DateTime @default(now())
+
+  @@id([topicId, deviceHash]) // one Me too per device per topic
+}
+
+model Activity {
+  id          String          @id @default(uuid())
+  sessionId   String
+  session     Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type        ActivityType
+  kind        QuickCheckKind? // only for QUICK_CHECK
+  prompt      String // ≤ 2000
+  options     Json            @default("[]") // string[] for MCQ (2–5)
+  correct     Json? // number (MCQ index / NUMERIC value) or boolean (TRUE_FALSE). NEVER sent to students before REVEALED
+  tolerance   Float? // NUMERIC only, ≥ 0
+  explanation String? // QUICK_CHECK, required; sent only when REVEALED
+  modelAnswer String? // EXPLAIN only; never sent to students
+  status      ActivityStatus  @default(DRAFT)
+  round       Int             @default(1)
+  position    Int // run order in the activities list
+  createdAt   DateTime        @default(now())
+  responses   Response[]
+
+  @@index([sessionId, position])
+}
+
+model Response {
+  id         String      @id @default(uuid())
+  activityId String
+  activity   Activity    @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  deviceHash String
+  round      Int         @default(1)
+  answer     Json? // QUICK_CHECK: number | boolean
+  confident  Boolean? // null = skipped
+  text       String? // EXPLAIN: 1–200, moderated
+  tag        ExplainTag? // EXPLAIN: set by instructor
+  createdAt  DateTime    @default(now())
+
+  @@unique([activityId, deviceHash, round]) // one answer per device per round
+  @@index([activityId, round])
+}
+
+model Takeaway {
+  sessionId   String         @id
+  session     Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  status      TakeawayStatus @default(DRAFT)
+  keyPoints   Json           @default("[]") // string[] (≤ 10, each ≤ 300)
+  topTopicIds Json           @default("[]") // string[] of Topic ids, ordered
+  publishedAt DateTime?
+  updatedAt   DateTime       @updatedAt
+}

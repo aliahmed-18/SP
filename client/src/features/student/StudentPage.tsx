@@ -53,7 +53,7 @@ function StudentView({
   const showActivity = !ended && activity && !(activity.status !== 'LIVE' && isDismissed(activityKey!));
 
   return (
-    <div className="min-h-dvh pb-10">
+    <div className={showActivity ? 'min-h-dvh pb-28' : 'min-h-dvh pb-10'}>
       <ReconnectingBanner status={status} />
       <StudentHeader topic={state.session.topic} />
       <main className="mx-auto flex max-w-xl flex-col gap-6 px-4 py-6">

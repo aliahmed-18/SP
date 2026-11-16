@@ -140,7 +140,8 @@ test('copy the seeded templates into a new session (demo account)', async ({ pag
     .getByRole('button', { name: /Linear regression and correlation/ })
     .first()
     .click();
-  await expect(page.getByTestId('activity-row')).toHaveCount(4);
+  // The seeded lecture has 3 Quick Checks + 1 Explain; Explain is copied once it exists (Phase 6).
+  await expect(page.getByTestId('activity-row')).toHaveCount(3);
   // Tidy: end it so the demo dashboard stays clean.
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('menuitem', { name: 'End session' }).click();

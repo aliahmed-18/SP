@@ -7,7 +7,7 @@ import type { GetitSocket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '../qa/ConfirmDialog';
 import { activitiesApi, runLifecycle } from './activities-api';
-import { KIND_ICON, KIND_LABEL } from './kinds';
+import { activityKind } from './kinds';
 import { ResultsPanel } from './ResultsPanel';
 
 const STATUS_BADGE = {
@@ -47,7 +47,8 @@ export function ActivityRow({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const kind = a.kind ?? 'MCQ';
-  const Icon = KIND_ICON[kind];
+  const { label: kindLabel, Icon } = activityKind(a);
+  const isExplain = a.type === 'EXPLAIN';
   const badge = STATUS_BADGE[a.status];
   const run = async (fn: () => Promise<boolean>) => {
     setBusy(true);
@@ -74,7 +75,7 @@ export function ActivityRow({
       <div className="flex items-center gap-2 p-2 pl-3">
         <span className="w-5 text-center text-sm text-muted-foreground">{index + 1}</span>
         <Badge variant="accent" className="hidden sm:inline-flex">
-          <Icon aria-hidden /> {KIND_LABEL[kind]}
+          <Icon aria-hidden /> {kindLabel}
         </Badge>
         <button
           type="button"
@@ -97,7 +98,7 @@ export function ActivityRow({
             aria-hidden
           />
         </button>
-        {a.status === 'DRAFT' && !ended && !open && (
+        {a.status === 'DRAFT' && !ended && !open && !isExplain && (
           <Button
             size="sm"
             onClick={() => void life('activity:launch')}
@@ -111,7 +112,12 @@ export function ActivityRow({
 
       {open && (
         <div className="flex flex-col gap-4 border-t p-4">
-          {a.status === 'DRAFT' && (
+          {a.status === 'DRAFT' && isExplain && (
+            <p className="text-sm text-muted-foreground">
+              Explain activities can be run once that tool is added.
+            </p>
+          )}
+          {a.status === 'DRAFT' && !isExplain && (
             <ul className="flex flex-col gap-1 text-sm">
               {kind === 'NUMERIC' ? (
                 <li>
@@ -157,7 +163,7 @@ export function ActivityRow({
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            {a.status === 'DRAFT' && !ended && (
+            {a.status === 'DRAFT' && !ended && !isExplain && (
               <Button
                 onClick={() => void life('activity:launch')}
                 disabled={busy || anotherLive}
@@ -192,7 +198,7 @@ export function ActivityRow({
                 )}
               </>
             )}
-            {a.status !== 'LIVE' && (
+            {a.status !== 'LIVE' && !isExplain && (
               <Button variant="ghost" size="sm" onClick={onEdit}>
                 <Pencil /> Edit
               </Button>

@@ -39,6 +39,11 @@ export function ActivityView({ sessionId, activity: a, mine, getSocket, onMine, 
   const gotIt = revealed && mine ? isCorrect(mine.answer, a.correct!, kind, a.tolerance ?? null) : null;
   const Icon = HEADER[kind].icon;
 
+  // Each new state (question opens, closes, answer shown) starts at the top so the heading is visible.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [a.id, a.round, a.status]);
+
   // Keep the revealed result on this phone for the Take-away review (spec F).
   useEffect(() => {
     if (!revealed || !mine) return;

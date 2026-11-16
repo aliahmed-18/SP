@@ -123,8 +123,9 @@ export async function copyActivities(instructorId: string, sessionId: string, fr
   if (!from || from.instructorId !== instructorId)
     throw new HttpError(404, 'NOT_FOUND', 'Session not found.');
   return prisma.$transaction(async (tx) => {
+    // Quick Checks only until Explain is built (Phase 6), so a copied Explain can't be launched half-done.
     const source = await tx.activity.findMany({
-      where: { sessionId: fromSessionId },
+      where: { sessionId: fromSessionId, type: 'QUICK_CHECK' },
       orderBy: { position: 'asc' },
     });
     let position = await nextPosition(tx, sessionId);
@@ -210,6 +211,8 @@ export function launchActivity(sessionId: string, activityId: string) {
     await requireLiveSession(tx, sessionId);
     const a = await load(tx, sessionId, activityId);
     if (a.status !== 'DRAFT') throw new HttpError(409, 'NOT_DRAFT', 'This activity has already been run.');
+    if (a.type !== 'QUICK_CHECK')
+      throw new HttpError(409, 'NOT_SUPPORTED', 'Explain activities are not available yet.');
     await claimLiveSlot(tx, sessionId, a.id);
     return finish(tx, await tx.activity.update({ where: { id: a.id }, data: { status: 'LIVE' } }));
   });

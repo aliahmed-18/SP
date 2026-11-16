@@ -4,7 +4,9 @@ import { useParams } from 'react-router';
 import { normalizeJoinCode } from '@getit/shared';
 import { LoadingState } from '@/components/brand/brand';
 import { ReconnectingBanner } from '@/components/layout/ReconnectingBanner';
-import { getMyQuestions, type MyQuestion } from '@/lib/local-history';
+import { dismiss, getMyQuestions, isDismissed, type MyQuestion } from '@/lib/local-history';
+import { ActivityView } from './activity/ActivityView';
+import { AskSheet } from './AskSheet';
 import { AskBox } from './AskBox';
 import { InvalidSession } from './InvalidSession';
 import { MyQuestions } from './MyQuestions';
@@ -15,7 +17,7 @@ import { useStudentState } from './use-student-state';
 /** `/s/:code` — the phone screen (shots 20–29). */
 export function StudentPage() {
   const code = normalizeJoinCode(useParams().code ?? '');
-  const { state, status, getSocket, applyMeToo } = useStudentState(code);
+  const { state, status, getSocket, applyMeToo, applyMyResponse } = useStudentState(code);
 
   if (status === 'refused') return <InvalidSession code={code} />;
   if (!state) return <LoadingState text="Joining the lecture…" />;
@@ -27,6 +29,7 @@ export function StudentPage() {
       status={status}
       getSocket={getSocket}
       applyMeToo={applyMeToo}
+      applyMyResponse={applyMyResponse}
     />
   );
 }
@@ -36,19 +39,48 @@ function StudentView({
   status,
   getSocket,
   applyMeToo,
-}: Pick<ReturnType<typeof useStudentState>, 'getSocket' | 'applyMeToo' | 'status'> & {
+  applyMyResponse,
+}: Pick<ReturnType<typeof useStudentState>, 'getSocket' | 'applyMeToo' | 'applyMyResponse' | 'status'> & {
   state: NonNullable<ReturnType<typeof useStudentState>['state']>;
 }) {
   const sessionId = state.session.id;
   const [mine, setMine] = useState<MyQuestion[]>(() => getMyQuestions(sessionId));
   const ended = state.session.status === 'ENDED';
+  const [, rerender] = useState(0);
+  const activity = state.liveActivity;
+  const activityKey = activity ? `${activity.id}:${activity.round}:${activity.status}` : null;
+  // The phone switches to the activity on stage (spec E); "Back to the lecture" closes a finished one.
+  const showActivity = !ended && activity && !(activity.status !== 'LIVE' && isDismissed(activityKey!));
 
   return (
     <div className="min-h-dvh pb-10">
       <ReconnectingBanner status={status} />
       <StudentHeader topic={state.session.topic} />
       <main className="mx-auto flex max-w-xl flex-col gap-6 px-4 py-6">
-        {ended ? (
+        {showActivity ? (
+          <>
+            <ActivityView
+              key={activityKey}
+              sessionId={sessionId}
+              activity={activity}
+              mine={state.myResponse}
+              getSocket={getSocket}
+              onMine={applyMyResponse}
+              onBack={() => {
+                dismiss(activityKey!);
+                rerender((n) => n + 1);
+                window.scrollTo({ top: 0 });
+              }}
+            />
+            <AskSheet
+              sessionId={sessionId}
+              getSocket={getSocket}
+              online={status === 'connected'}
+              sentCount={mine.length}
+              onSent={setMine}
+            />
+          </>
+        ) : ended ? (
           <section
             className="fade-in flex flex-col items-center gap-3 rounded-2xl border bg-card p-8 text-center"
             aria-live="polite"
@@ -85,8 +117,17 @@ function StudentView({
             />
           </>
         )}
-        <MyQuestions questions={mine} />
-        <TopicsList topics={state.topics} getSocket={getSocket} canMeToo={!ended} applyMeToo={applyMeToo} />
+        {!showActivity && (
+          <>
+            <MyQuestions questions={mine} />
+            <TopicsList
+              topics={state.topics}
+              getSocket={getSocket}
+              canMeToo={!ended}
+              applyMeToo={applyMeToo}
+            />
+          </>
+        )}
       </main>
     </div>
   );

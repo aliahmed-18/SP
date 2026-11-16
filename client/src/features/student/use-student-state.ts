@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { StudentState, StudentTopic } from '@getit/shared';
+import type { MyResponse, StudentState, StudentTopic } from '@getit/shared';
 import { useLiveSocket } from '@/hooks/use-live-socket';
 import type { GetitSocket } from '@/lib/socket';
 
@@ -26,6 +26,14 @@ export function useStudentState(code: string) {
       s.on('topics:updated', ({ topics }) => {
         if (!ref.current) return;
         setState({ ...ref.current, topics: topics.map((t) => ({ ...t, iMeToo: mine.current.has(t.id) })) });
+      });
+      s.on('activity:student', ({ activity }) => {
+        const cur = ref.current;
+        if (!cur) return;
+        const prev = cur.liveActivity;
+        // A different activity or a new round means this phone hasn't answered it yet.
+        const same = prev && activity && prev.id === activity.id && prev.round === activity.round;
+        setState({ ...cur, liveActivity: activity, myResponse: same ? cur.myResponse : null });
       });
       s.on('session:ended', () => {
         if (ref.current) setState({ ...ref.current, session: { ...ref.current.session, status: 'ENDED' } });
@@ -55,5 +63,14 @@ export function useStudentState(code: string) {
     [setState],
   );
 
-  return { state, applyMeToo, ...live };
+  /** Store this phone's answer / confidence from the server's ack. */
+  const applyMyResponse = useCallback(
+    (mine: MyResponse) => {
+      const cur = ref.current;
+      if (cur) setState({ ...cur, myResponse: mine });
+    },
+    [setState],
+  );
+
+  return { state, applyMeToo, applyMyResponse, ...live };
 }

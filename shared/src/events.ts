@@ -1,6 +1,19 @@
 // Socket.io contract (docs/04-realtime-events.md). Grows phase by phase.
 // Every client → server event takes an ack callback with `Ack<T>`.
-import type { HostQuestion, HostState, HostTopic, PresentState, PublicTopic, StudentState } from './types';
+import type {
+  ActivityStats,
+  HostActivity,
+  HostQuestion,
+  HostState,
+  HostTopic,
+  MyResponse,
+  PresentActivity,
+  PresentState,
+  PublicTopic,
+  StudentActivity,
+  StudentState,
+} from './types';
+import type { Answer } from './rules';
 import type { SocketRole } from './schemas';
 
 export type AckError = { code: string; message: string };
@@ -27,6 +40,22 @@ export interface ClientToServerEvents {
     payload: { topicId: string; on: boolean },
     ack: (res: Ack<{ on: boolean; meTooCount: number }>) => void,
   ) => void;
+  /** Student. Duplicate in the same round → ack with the FIRST answer (not an error). */
+  'activity:answer': (
+    payload: { activityId: string; round: number; answer: Answer },
+    ack: (res: Ack<MyResponse>) => void,
+  ) => void;
+  /** Student. "How sure are you?" Sure / Not sure / Skip (null). */
+  'activity:confidence': (
+    payload: { activityId: string; round: number; confident: boolean | null },
+    ack: (res: Ack<MyResponse>) => void,
+  ) => void;
+  // Host / projector lifecycle (one LIVE activity per session).
+  'activity:launch': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
+  'activity:close': (payload: { activityId: string; reveal?: boolean }, ack: (res: Ack) => void) => void;
+  'activity:reveal': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
+  'activity:newRound': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
+  'activity:undo': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
 }
 
 /** Part counters that change when something is flagged. */
@@ -46,6 +75,23 @@ export interface ServerToClientEvents {
   'topics:host': (payload: { version: number; topics: HostTopic[] }) => void;
   /** Students: the class's topic list (their own `iMeToo` is kept client-side from snapshot + acks). */
   'topics:updated': (payload: { topics: PublicTopic[] }) => void;
+  /** Host: one activity changed (status, round, stats). */
+  'activity:host': (payload: {
+    version: number;
+    activity: HostActivity;
+    liveActivityId: string | null;
+    stageActivityId: string | null;
+  }) => void;
+  /** Projector: same, projector DTO. */
+  'activity:present': (payload: {
+    activity: PresentActivity;
+    liveActivityId: string | null;
+    stageActivityId: string | null;
+  }) => void;
+  /** Students: the activity on stage (student DTO — no answer before REVEALED), or null. */
+  'activity:student': (payload: { activity: StudentActivity | null }) => void;
+  /** Live answer count (throttled to ≤ 4/s per activity). */
+  'activity:stats': (payload: ActivityStats) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type

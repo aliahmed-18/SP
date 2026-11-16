@@ -127,3 +127,91 @@ export const updateQuestionSchema = z
   .object({ addressed: z.boolean().optional(), topicId: z.string().uuid().nullable().optional() })
   .refine((d) => d.addressed !== undefined || d.topicId !== undefined, { message: 'Nothing to change.' });
 export type UpdateQuestionInput = z.input<typeof updateQuestionSchema>;
+
+// ─── Quick Check (Phase 4) ──────────────────────────────────────────────────
+
+export const ACTIVITY_LIMITS = {
+  promptMax: 2000,
+  optionMax: 300,
+  optionsMin: 2,
+  optionsMax: 5,
+  explanationMax: 2000,
+} as const;
+
+const prompt = z
+  .string()
+  .trim()
+  .min(1, 'Write the question.')
+  .max(ACTIVITY_LIMITS.promptMax, 'The question is too long.');
+const explanation = z
+  .string()
+  .trim()
+  .min(1, 'Write an explanation — students see it when you reveal the answer.')
+  .max(ACTIVITY_LIMITS.explanationMax, 'The explanation is too long.');
+const option = z
+  .string()
+  .trim()
+  .min(1, 'Options cannot be empty.')
+  .max(ACTIVITY_LIMITS.optionMax, 'An option is too long.');
+const finite = z.number().finite().min(-1e12).max(1e12);
+
+/** A Quick Check draft (spec C2). The server validates every create/edit with this. */
+export const quickCheckDraftSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      type: z.literal('QUICK_CHECK'),
+      kind: z.literal('MCQ'),
+      prompt,
+      options: z
+        .array(option)
+        .min(ACTIVITY_LIMITS.optionsMin, 'Add at least 2 options.')
+        .max(ACTIVITY_LIMITS.optionsMax, 'Up to 5 options.'),
+      correct: z.number().int().min(0),
+      explanation,
+    })
+    .refine((d) => d.correct < d.options.length, {
+      message: 'Choose the correct option.',
+      path: ['correct'],
+    }),
+  z.object({
+    type: z.literal('QUICK_CHECK'),
+    kind: z.literal('TRUE_FALSE'),
+    prompt,
+    correct: z.boolean(),
+    explanation,
+  }),
+  z.object({
+    type: z.literal('QUICK_CHECK'),
+    kind: z.literal('NUMERIC'),
+    prompt,
+    correct: finite,
+    tolerance: z.number().finite().min(0, 'Tolerance cannot be negative.').max(1e12),
+    explanation,
+  }),
+]);
+export type QuickCheckDraft = z.infer<typeof quickCheckDraftSchema>;
+export type QuickCheckDraftInput = z.input<typeof quickCheckDraftSchema>;
+
+/** After launch only the wording can change (fair results): prompt, explanation, option texts. */
+export const activityTextFixSchema = z.object({
+  prompt,
+  explanation,
+  options: z.array(option).max(ACTIVITY_LIMITS.optionsMax).optional(),
+});
+
+export const reorderSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(200) });
+export const copyActivitiesSchema = z.object({ fromSessionId: z.string().uuid() });
+
+export const activityIdSchema = z.object({ activityId: z.string().uuid() });
+export const closeActivitySchema = activityIdSchema.extend({ reveal: z.boolean().optional() });
+
+export const answerSchema = z.object({
+  activityId: z.string().uuid(),
+  round: z.number().int().min(1).max(50),
+  answer: z.union([finite, z.boolean()]),
+});
+export const confidenceSchema = z.object({
+  activityId: z.string().uuid(),
+  round: z.number().int().min(1).max(50),
+  confident: z.boolean().nullable(),
+});

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { FlagCounts, HostState } from '@getit/shared';
+import type { ActivityStats, FlagCounts, HostState } from '@getit/shared';
 import { useLiveSocket } from '@/hooks/use-live-socket';
 import type { GetitSocket } from '@/lib/socket';
 
@@ -17,6 +17,8 @@ function withFlags(s: HostState, f: FlagCounts): HostState {
  */
 export function useHostState(code: string) {
   const [state, setStateRaw] = useState<HostState | null>(null);
+  /** Live "answered / joined" per activity (not versioned: counts only). */
+  const [liveStats, setLiveStats] = useState<Record<string, ActivityStats>>({});
   const ref = useRef<HostState | null>(null);
   const setState = useCallback((next: HostState | null) => {
     ref.current = next;
@@ -61,10 +63,19 @@ export function useHostState(code: string) {
       );
       s.on('qa:flagged', ({ version, ...flags }) => versioned(version, (c) => withFlags(c, flags)));
       s.on('topics:host', ({ version, topics }) => versioned(version, (c) => ({ ...c, topics })));
+      s.on('activity:host', ({ version, activity, liveActivityId, stageActivityId }) =>
+        versioned(version, (c) => ({
+          ...c,
+          liveActivityId,
+          stageActivityId,
+          activities: c.activities.map((a) => (a.id === activity.id ? activity : a)),
+        })),
+      );
+      s.on('activity:stats', (st) => setLiveStats((prev) => ({ ...prev, [st.activityId]: st })));
     },
     [setState],
   );
 
   const live = useLiveSocket('host', code, register);
-  return { state, setState, ...live };
+  return { state, setState, liveStats, ...live };
 }

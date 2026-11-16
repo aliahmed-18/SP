@@ -8,11 +8,21 @@ import {
   type ServerToClientEvents,
   type StudentState,
 } from '@getit/shared';
-import type { Session } from '@prisma/client';
+import type { Activity, Session } from '@prisma/client';
 import { prisma } from '../db';
 import { bus } from '../lib/bus';
+import { statsFor } from '../services/activities';
 import { countJoined } from '../services/participants';
-import { toHostPart, toHostQuestion, toHostTopic, toPublicTopic } from './dto';
+import { countResponses, myResponse } from '../services/responses';
+import {
+  toHostActivity,
+  toHostPart,
+  toHostQuestion,
+  toHostTopic,
+  toPresentActivity,
+  toPublicTopic,
+  toStudentActivity,
+} from './dto';
 import type { IoServer } from './socket';
 
 let io: IoServer | null = null;
@@ -25,12 +35,23 @@ async function loadSession(sessionId: string): Promise<Session> {
   return prisma.session.findUniqueOrThrow({ where: { id: sessionId } });
 }
 
+const loadActivities = (sessionId: string) =>
+  prisma.activity.findMany({ where: { sessionId }, orderBy: { position: 'asc' } });
+
+/** What phones show: the activity on stage, unless it is a draft (or the session ended). */
+async function stageActivity(s: Session): Promise<Activity | null> {
+  if (!s.presentActivityId || s.status !== 'LIVE') return null;
+  const a = await prisma.activity.findUnique({ where: { id: s.presentActivityId } });
+  return a && a.status !== 'DRAFT' ? a : null;
+}
+
 export async function buildHostState(sessionId: string): Promise<HostState> {
   const s = await loadSession(sessionId);
-  const [parts, questions, topics] = await Promise.all([
+  const [parts, questions, topics, activities] = await Promise.all([
     prisma.part.findMany({ where: { sessionId }, orderBy: { number: 'asc' } }),
     prisma.question.findMany({ where: { sessionId }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }] }),
     prisma.topic.findMany({ where: { sessionId }, orderBy: { createdAt: 'asc' } }),
+    loadActivities(sessionId),
   ]);
   return {
     version: s.version,
@@ -49,8 +70,9 @@ export async function buildHostState(sessionId: string): Promise<HostState> {
     parts: parts.map(toHostPart),
     questions: questions.map(toHostQuestion),
     topics: topics.map(toHostTopic),
-    activities: [],
+    activities: await Promise.all(activities.map(async (a) => toHostActivity(a, await statsFor(a)))),
     liveActivityId: s.liveActivityId,
+    stageActivityId: s.presentActivityId,
   };
 }
 
@@ -73,8 +95,11 @@ export async function buildPresentState(sessionId: string): Promise<PresentState
   return {
     version: s.version,
     session: { code: s.code, topic: s.topic, status: s.status, joinedCount: await countJoined(s.id) },
-    activities: [],
+    activities: await Promise.all(
+      (await loadActivities(sessionId)).map(async (a) => toPresentActivity(a, await statsFor(a))),
+    ),
     liveActivityId: s.liveActivityId,
+    stageActivityId: s.presentActivityId,
     projected: null,
   };
 }
@@ -88,11 +113,12 @@ export async function buildStudentState(sessionId: string, deviceHash: string): 
     prisma.meToo.findMany({ where: { deviceHash, topic: { sessionId } }, select: { topicId: true } }),
   ]);
   const meToo = new Set(mine.map((m) => m.topicId));
+  const stage = await stageActivity(s);
   return {
     version: s.version,
     session: { id: s.id, topic: s.topic, status: s.status },
-    liveActivity: null,
-    myResponse: null,
+    liveActivity: stage ? toStudentActivity(stage) : null,
+    myResponse: await myResponse(stage, deviceHash),
     topics: topics.map((t) => ({ ...t, iMeToo: meToo.has(t.id) })),
     takeawayPublished: takeaway?.status === 'PUBLISHED',
   };
@@ -156,6 +182,12 @@ export async function emitHostSnapshot(sessionId: string) {
   server.to(rooms.host(sessionId)).emit('state:host', await buildHostState(sessionId));
 }
 
+export async function emitPresentSnapshot(sessionId: string) {
+  const server = io;
+  if (!server) return;
+  server.to(rooms.present(sessionId)).emit('state:present', await buildPresentState(sessionId));
+}
+
 /** Students' topic list changed (title, status, reply, Me too, membership). */
 export async function emitStudentTopics(sessionId: string) {
   const server = io;
@@ -175,4 +207,73 @@ export async function emitTopicCounts(sessionId: string, version: number) {
 /** Log and swallow emit failures: the DB write already succeeded, clients resync on the next snapshot. */
 export function safeEmit(p: Promise<unknown>) {
   p.catch((err) => console.error('[getit] emit failed', err));
+}
+
+// ─── Activity emits ─────────────────────────────────────────────────────────
+
+/** After a lifecycle change: host (versioned), projector, and every phone (student DTO). */
+export async function emitActivityChanged(r: {
+  activity: Activity;
+  version: number;
+  liveActivityId: string | null;
+  stageActivityId: string | null;
+}) {
+  const server = io;
+  if (!server) return;
+  const { sessionId } = r.activity;
+  const stats = await statsFor(r.activity);
+  const ids = { liveActivityId: r.liveActivityId, stageActivityId: r.stageActivityId };
+  server
+    .to(rooms.host(sessionId))
+    .emit('activity:host', { version: r.version, activity: toHostActivity(r.activity, stats), ...ids });
+  server
+    .to(rooms.present(sessionId))
+    .emit('activity:present', { activity: toPresentActivity(r.activity, stats), ...ids });
+  const onStage = r.stageActivityId === r.activity.id && r.activity.status !== 'DRAFT';
+  if (onStage) {
+    server
+      .to(rooms.students(sessionId))
+      .emit('activity:student', { activity: toStudentActivity(r.activity) });
+  }
+}
+
+// Live answer counts, throttled per activity to at most one emit every 250 ms (≤ 4/s, docs/04).
+const STATS_INTERVAL_MS = 250;
+const statsTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; dirty: boolean }>();
+
+export function scheduleStats(sessionId: string, activityId: string) {
+  const pending = statsTimers.get(activityId);
+  if (pending) {
+    pending.dirty = true;
+    return;
+  }
+  const fire = () => safeEmit(emitStats(sessionId, activityId));
+  fire();
+  const entry = {
+    dirty: false,
+    timer: setTimeout(function tick() {
+      if (entry.dirty) {
+        entry.dirty = false;
+        fire();
+        entry.timer = setTimeout(tick, STATS_INTERVAL_MS);
+        entry.timer.unref?.();
+      } else {
+        statsTimers.delete(activityId);
+      }
+    }, STATS_INTERVAL_MS),
+  };
+  entry.timer.unref?.();
+  statsTimers.set(activityId, entry);
+}
+
+async function emitStats(sessionId: string, activityId: string) {
+  const server = io;
+  if (!server) return;
+  const a = await prisma.activity.findUnique({ where: { id: activityId }, select: { round: true } });
+  if (!a) return;
+  const round = a.round;
+  const [responses, joined] = await Promise.all([countResponses(activityId, round), countJoined(sessionId)]);
+  server
+    .to([rooms.host(sessionId), rooms.present(sessionId)])
+    .emit('activity:stats', { activityId, round, responses, joined });
 }

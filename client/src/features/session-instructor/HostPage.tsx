@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CircleStop, ListChecks, Play, Plus } from 'lucide-react';
+import { CircleStop, Play, Plus } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { normalizeJoinCode, type HostState } from '@getit/shared';
@@ -13,6 +13,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { UserMenu } from '@/features/auth/UserMenu';
 import { api, ApiRequestError } from '@/lib/api';
 import { openPresentWindow } from '@/lib/links';
+import { ActivitiesSection } from './activities/ActivitiesSection';
 import { EndSessionDialog } from './EndSessionDialog';
 import { InviteCard } from './InviteCard';
 import { QaPanel } from './QaPanel';
@@ -21,7 +22,7 @@ import { useHostState } from './use-host-state';
 
 export function HostPage() {
   const code = normalizeJoinCode(useParams().code ?? '');
-  const { state, setState, status, refusal } = useHostState(code);
+  const { state, setState, status, refusal, liveStats, getSocket } = useHostState(code);
   const [qrOpen, setQrOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
 
@@ -107,18 +108,7 @@ export function HostPage() {
             />
           )}
 
-          <section aria-labelledby="activities-title" className="flex flex-col gap-3">
-            <h2 id="activities-title" className="text-xl font-semibold">
-              Activities list
-            </h2>
-            <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed p-10 text-center">
-              <ListChecks className="size-6 text-primary" aria-hidden />
-              <p className="font-medium">No activity added yet</p>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                Quick Checks and Explain prompts you add will appear here in run order.
-              </p>
-            </div>
-          </section>
+          <ActivitiesSection state={state} liveStats={liveStats} getSocket={getSocket} />
 
           {!ended && (
             <div className="flex flex-col items-center gap-2">

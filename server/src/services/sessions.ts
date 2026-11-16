@@ -55,7 +55,7 @@ export async function listSessions(
   const rows = await prisma.session.findMany({
     where,
     orderBy: { startedAt: 'desc' },
-    include: { _count: { select: { participants: true, questions: true } } },
+    include: { _count: { select: { participants: true, questions: true, activities: true } } },
   });
   return rows.map((s) => ({
     id: s.id,
@@ -67,6 +67,7 @@ export async function listSessions(
     endedAt: s.endedAt?.toISOString() ?? null,
     joined: s._count.participants,
     questions: s._count.questions,
+    activities: s._count.activities,
   }));
 }
 

@@ -32,9 +32,10 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 
 ## Activities (instructor)
 | POST | `/sessions/:code/activities` | Quick Check or Explain draft (shared zod `activityDraftSchema`) |
-| PATCH | `/activities/:id` | edit (only DRAFT, or CLOSED/REVEALED for text fixes) |
+| PATCH | `/activities/:id` | DRAFT: full draft (shared `quickCheckDraftSchema`). CLOSED/REVEALED: wording only `{ prompt, explanation, options? }` (same number of options). LIVE: 409 |
 | DELETE | `/activities/:id` | not allowed while LIVE |
-| POST | `/sessions/:code/activities/reorder` | `{ ids: string[] }` |
+| POST | `/sessions/:code/activities/reorder` | `{ ids: string[] }` (exactly this session's activities, new order) |
+| POST | `/sessions/:code/activities/copy` | `{ fromSessionId }` → copies that (own) session's activities as DRAFTs at the end (seeded templates) |
 | PATCH | `/responses/:id/tag` | Explain tag `{ tag }` |
 
 ## Q&A (instructor)

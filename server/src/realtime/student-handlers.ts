@@ -1,29 +1,11 @@
-import { askQuestionSchema, meTooSchema, type Ack, type AckError } from '@getit/shared';
+import { answerSchema, askQuestionSchema, confidenceSchema, meTooSchema } from '@getit/shared';
 import { HttpError } from '../lib/errors';
 import { askQuestion } from '../services/questions';
 import { setMeToo } from '../services/topics';
-import { emitToHost, emitTopicCounts, safeEmit } from './broadcast';
+import { emitToHost, emitTopicCounts, safeEmit, scheduleStats } from './broadcast';
+import { handle } from './handle';
+import { setConfidence, submitAnswer } from '../services/responses';
 import type { IoSocket } from './socket';
-
-const INTERNAL: AckError = { code: 'INTERNAL', message: 'Something went wrong. Please try again.' };
-
-function toAckError(err: unknown): AckError {
-  if (err instanceof HttpError) return { code: err.code, message: err.message };
-  console.error('[getit] socket handler failed', err);
-  return INTERNAL;
-}
-
-/** Wrap a handler: validate the ack callback exists, catch everything, always answer (docs/04 §Rules). */
-function handle<P, R>(fn: (payload: P) => Promise<R>) {
-  return async (payload: P, ack: unknown) => {
-    const reply = typeof ack === 'function' ? (ack as (res: Ack<R>) => void) : () => undefined;
-    try {
-      reply({ ok: true, data: await fn(payload) });
-    } catch (err) {
-      reply({ ok: false, error: toAckError(err) });
-    }
-  };
-}
 
 export function registerStudentHandlers(socket: IoSocket) {
   const { sessionId, deviceHash, role } = socket.data;
@@ -54,6 +36,26 @@ export function registerStudentHandlers(socket: IoSocket) {
       const r = await setMeToo(sessionId, deviceHash, parsed.data.topicId, parsed.data.on);
       safeEmit(emitTopicCounts(sessionId, r.version));
       return { on: r.on, meTooCount: r.meTooCount };
+    }),
+  );
+
+  socket.on(
+    'activity:answer',
+    handle(async (payload: unknown) => {
+      const parsed = answerSchema.safeParse(payload);
+      if (!parsed.success) throw new HttpError(400, 'VALIDATION', 'Invalid answer.');
+      const { mine, created } = await submitAnswer(sessionId, deviceHash, parsed.data);
+      if (created) scheduleStats(sessionId, parsed.data.activityId);
+      return mine;
+    }),
+  );
+
+  socket.on(
+    'activity:confidence',
+    handle(async (payload: unknown) => {
+      const parsed = confidenceSchema.safeParse(payload);
+      if (!parsed.success) throw new HttpError(400, 'VALIDATION', 'Invalid request.');
+      return setConfidence(sessionId, deviceHash, parsed.data);
     }),
   );
 }

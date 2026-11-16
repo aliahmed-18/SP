@@ -54,15 +54,26 @@ export function useLiveSocket(
       if (s.connected) s.emit('state:request');
       else if (!s.active) s.connect();
     };
+    // The browser knows about a lost network long before the socket's heartbeat does: show it at once,
+    // drop the dead connection, and reconnect (→ fresh snapshot) as soon as the network is back.
+    const wentOffline = () => {
+      setStatus('reconnecting');
+      s.disconnect();
+    };
+    const cameOnline = () => {
+      if (!s.connected) s.connect();
+    };
     document.addEventListener('visibilitychange', resync);
-    window.addEventListener('online', resync);
+    window.addEventListener('online', cameOnline);
+    window.addEventListener('offline', wentOffline);
 
     socketRef.current = s;
     s.connect();
     return () => {
       clearTimeout(retry);
       document.removeEventListener('visibilitychange', resync);
-      window.removeEventListener('online', resync);
+      window.removeEventListener('online', cameOnline);
+      window.removeEventListener('offline', wentOffline);
       s.removeAllListeners();
       s.close();
       socketRef.current = null;

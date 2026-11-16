@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { isProd } from './env';
 import { errorHandler, notFoundApi } from './lib/errors';
 import { authRouter } from './auth/routes';
+import { activitiesRouter } from './routes/activities';
 import { coursesRouter } from './routes/courses';
 import { healthRouter } from './routes/health';
 import { publicRouter } from './routes/public';
@@ -35,6 +36,7 @@ export function createApp() {
   api.use(sessionsRouter);
   api.use(publicRouter);
   api.use(qaRouter);
+  api.use(activitiesRouter);
   api.use(notFoundApi);
   app.use('/api', api);
 

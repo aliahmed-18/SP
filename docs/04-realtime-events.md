@@ -14,7 +14,9 @@ Put all event names and payload types in `shared/src/events.ts` and use typed So
 - On **every connect / reconnect**, the server immediately emits a full snapshot (`state:student` / `state:host` / `state:present`). Clients **replace** their state with it.
 - Also: client re-requests the snapshot (`state:request`) when the tab becomes visible again or the browser goes back online.
 - Every snapshot and every **host** event includes `version` (session.version, bumped by every write). If the host receives an event with `version > local + 1`, it requests a fresh snapshot; `version <= local` is ignored. Students don't see every write, so they rely on snapshots (connect / focus / online) instead of gap detection.
-- Use Socket.io's default reconnection; show a small "Reconnecting…" banner while disconnected.
+- Use Socket.io's default reconnection; show a small "Reconnecting…" banner while disconnected. The client also reacts to the browser's `offline`/`online` events immediately, and the server heartbeat is 15 s + 10 s, so a dropped phone is noticed in seconds, not ~45 s.
+- **Stage activity** (`Session.presentActivityId`, exposed as `stageActivityId`): the activity phones and the projector show — set on launch, kept after close/reveal (so phones can show "Answer sent" → result), replaced by the next launch. `StudentState.liveActivity` is the stage activity (not DRAFT, session LIVE).
+- Lifecycle rules: launch only DRAFT; close only LIVE (`reveal: true` → straight to REVEALED); reveal from LIVE or CLOSED; new round only from CLOSED (before the answer is shown); undo REVEALED→CLOSED→LIVE. Launch / new round / undo-to-LIVE claim the single live slot atomically (`UPDATE Session SET liveActivityId … WHERE liveActivityId IS NULL`) + the partial unique index.
 
 ## Three different views of the same data (DTO builders in `server/src/realtime/broadcast.ts`)
 - `toStudentActivity(a)` — `{ id, type, kind, prompt, options, status, round }` + `{ correct, explanation, tolerance }` **only if REVEALED**. Never `modelAnswer`. Never others' answers or counts.
@@ -62,7 +64,9 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 | `topics:updated` | students | `{ topics: PublicTopic[] }` sorted; no `iMeToo` (each phone keeps its own from the snapshot + its acks) |
 | `topics:host` | host | `{ version, topics: HostTopic[] }` (Me too counts changed) |
 | `qa:flagged` | host | `{ version, flaggedCount, part: { id, flaggedCount } }` (a question was stealth-blocked) |
-| `activity:updated` | students (student DTO), host, present | the activity in the right DTO |
+| `activity:host` | host | `{ version, activity: HostActivity, liveActivityId, stageActivityId }` (lifecycle change) |
+| `activity:present` | present | `{ activity: PresentActivity, liveActivityId, stageActivityId }` |
+| `activity:student` | students | `{ activity: StudentActivity \| null }` — only the activity **on stage**; phones reset `myResponse` when the id or round changes |
 | `activity:stats` | host, present | `{ activityId, round, responses, joined }` (throttle to max 4/s) |
 | `present:projected` | present | `ProjectedItem` |
 | `session:ended` | all | `{ endedAt }` |

@@ -5,7 +5,14 @@ import { LIMITS } from '@getit/shared';
 import { Spinner } from '@/components/brand/brand';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { addMyQuestion, getDraft, setDraft, type MyQuestion } from '@/lib/local-history';
+import {
+  addMyQuestion,
+  getDraft,
+  getLastSent,
+  setDraft,
+  setLastSent,
+  type MyQuestion,
+} from '@/lib/local-history';
 import type { GetitSocket } from '@/lib/socket';
 
 /**
@@ -18,16 +25,19 @@ export function AskBox({
   online,
   sentCount,
   onSent,
+  bare = false,
 }: {
   sessionId: string;
   getSocket: () => GetitSocket | null;
   online: boolean;
   sentCount: number;
   onSent: (mine: MyQuestion[]) => void;
+  /** In the Ask sheet: no card chrome. */
+  bare?: boolean;
 }) {
   const [text, setText] = useState(() => getDraft(sessionId));
   const [sending, setSending] = useState(false);
-  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [cooldownUntil, setCooldownUntil] = useState(() => getLastSent(sessionId) + LIMITS.questionMinGapMs);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => setDraft(sessionId, text), [sessionId, text]);
@@ -59,6 +69,7 @@ export function AskBox({
       }
       onSent(addMyQuestion(sessionId, { text: text.trim().replace(/\s+/g, ' '), sentAt: res.data.sentAt }));
       setText('');
+      setLastSent(sessionId, Date.now());
       setCooldownUntil(Date.now() + LIMITS.questionMinGapMs);
       setNow(Date.now());
       toast.success('Question sent');
@@ -72,10 +83,10 @@ export function AskBox({
   return (
     <form
       onSubmit={onSubmit}
-      className="rounded-2xl border bg-card p-5 shadow-xs"
+      className={bare ? 'flex flex-col' : 'rounded-2xl border bg-card p-5 shadow-xs'}
       aria-labelledby="ask-title"
     >
-      <h2 id="ask-title" className="text-lg font-semibold">
+      <h2 id="ask-title" className={bare ? 'sr-only' : 'text-lg font-semibold'}>
         Your question
       </h2>
       <p className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">

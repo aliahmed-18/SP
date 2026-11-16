@@ -16,6 +16,7 @@ import { hashDevice } from '../lib/deviceHash';
 import { joinSession } from '../services/participants';
 import { findHostSession, findPublicSession } from '../services/sessions';
 import { buildHostState, buildPresentState, buildStudentState, setIo } from './broadcast';
+import { registerHostHandlers } from './host-handlers';
 import { registerStudentHandlers } from './student-handlers';
 
 export type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -25,6 +26,9 @@ export function createSocketServer(httpServer: HttpServer): IoServer {
   const io: IoServer = new Server(httpServer, {
     // Same origin in dev (Vite proxy) and prod (one service); CORS only matters for direct dev access.
     cors: isProd ? undefined : { origin: env.CLIENT_ORIGIN, credentials: true },
+    // Notice dead phones (Wi-Fi dropped without a goodbye) within ~25 s instead of the default ~45 s.
+    pingInterval: 15_000,
+    pingTimeout: 10_000,
   });
   setIo(io);
 
@@ -81,6 +85,7 @@ async function onConnection(socket: IoSocket) {
   });
 
   registerStudentHandlers(socket);
+  registerHostHandlers(socket);
 
   try {
     if (role === 'student') {

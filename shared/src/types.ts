@@ -1,3 +1,5 @@
+import type { Answer, RoundStats } from './rules';
+
 // Shared names (CLAUDE.md §5) and DTO shapes (docs/04-realtime-events.md).
 // Kept as plain string unions so client code never imports Prisma.
 
@@ -39,6 +41,7 @@ export type SessionListItem = {
   endedAt: string | null;
   joined: number;
   questions: number;
+  activities: number;
 };
 
 export type CreatedSession = { id: string; code: string };
@@ -87,21 +90,65 @@ export type PublicTopic = {
 };
 export type StudentTopic = PublicTopic & { iMeToo: boolean };
 
+// ─── Activities (Quick Check) ───────────────────────────────────────────────
+
+/** Rule 3: `correct`, `explanation`, `tolerance` exist ONLY when status is REVEALED. Never `modelAnswer`. */
+export type StudentActivity = {
+  id: string;
+  type: ActivityType;
+  kind: QuickCheckKind | null;
+  prompt: string;
+  options: string[];
+  status: ActivityStatus;
+  round: number;
+  correct?: Answer;
+  explanation?: string;
+  tolerance?: number | null;
+};
+
+/** This device's answer for the activity's current round (so a refreshed phone shows "Answer sent"). */
+export type MyResponse = { round: number; answer: Answer; confident: boolean | null };
+
+export type HostActivity = {
+  id: string;
+  type: ActivityType;
+  kind: QuickCheckKind | null;
+  prompt: string;
+  options: string[];
+  correct: Answer | null;
+  tolerance: number | null;
+  explanation: string | null;
+  modelAnswer: string | null;
+  status: ActivityStatus;
+  round: number;
+  position: number;
+  /** One entry per round played so far (round 1 … current). */
+  stats: RoundStats[];
+};
+
+/** Projector view: like the host's, minus modelAnswer (and Explain texts, Phase 6). */
+export type PresentActivity = Omit<HostActivity, 'modelAnswer'>;
+
+export type ActivityStats = { activityId: string; round: number; responses: number; joined: number };
+
 export type HostState = {
   version: number;
   session: HostSession;
   parts: HostPart[]; // ordered by number
   questions: HostQuestion[]; // newest first
   topics: HostTopic[];
-  activities: unknown[]; // Phase 4
+  activities: HostActivity[]; // run order
   liveActivityId: string | null;
+  /** The activity "on stage" for phones/projector (LIVE, or just closed/revealed), or null. */
+  stageActivityId: string | null;
 };
 
 export type PresentState = {
   version: number;
   session: { code: string; topic: string; status: SessionStatus; joinedCount: number };
-  activities: unknown[]; // Phase 5
+  activities: PresentActivity[];
   liveActivityId: string | null;
+  stageActivityId: string | null;
   projected: null; // Phase 5
 };
 
@@ -109,8 +156,9 @@ export type StudentState = {
   version: number;
   /** `id` is the session's random uuid (not an identity); students key local history by it. */
   session: { id: string; topic: string; status: SessionStatus };
-  liveActivity: null; // Phase 4
-  myResponse: null; // Phase 4
+  /** The activity on stage (LIVE, CLOSED or REVEALED) — the phone switches to it — or null. */
+  liveActivity: StudentActivity | null;
+  myResponse: MyResponse | null;
   // No `myQuestions` from the server: a stealth-blocked question is never stored, so a server list would
   // reveal the block. "My questions" is kept on the phone (spec E: "from localStorage").
   topics: StudentTopic[]; // sorted (sortTopics)

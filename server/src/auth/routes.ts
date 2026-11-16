@@ -7,7 +7,8 @@ import { getMe, login, register } from '../services/auth';
 import { AUTH_COOKIE, authCookieOptions, signSessionToken, signSocketToken } from './jwt';
 import { instructorId, requireInstructor } from './middleware';
 
-export const loginLimiter = new FixedWindowLimiter(20, 10 * 60 * 1000); // per IP + email
+// Failed logins per IP + email (successful ones never count, so rehearsals can't lock the demo account).
+export const loginLimiter = new FixedWindowLimiter(20, 10 * 60 * 1000);
 export const registerLimiter = new FixedWindowLimiter(50, 60 * 60 * 1000); // per IP
 
 const TOO_MANY = new HttpError(429, 'RATE_LIMITED', 'Too many attempts. Wait a few minutes and try again.');
@@ -23,8 +24,16 @@ authRouter.post('/auth/register', async (req, res) => {
 
 authRouter.post('/auth/login', async (req, res) => {
   const input = parse(loginSchema, req.body);
-  if (!loginLimiter.hit(`${req.ip ?? 'unknown'}|${input.email}`)) throw TOO_MANY;
-  const me = await login(input);
+  const key = `${req.ip ?? 'unknown'}|${input.email}`;
+  if (loginLimiter.isBlocked(key)) throw TOO_MANY;
+  let me;
+  try {
+    me = await login(input);
+  } catch (err) {
+    loginLimiter.hit(key);
+    throw err;
+  }
+  loginLimiter.clear(key);
   res.cookie(AUTH_COOKIE, signSessionToken(me.id), authCookieOptions);
   res.json(me);
 });

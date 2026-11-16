@@ -57,12 +57,42 @@ export type HostSession = {
   courseId: string | null;
 };
 
+// ─── Q&A DTOs (no device hash, ever) ─────────────────────────────────────────
+export type HostPart = { id: string; number: number; flaggedCount: number; createdAt: string };
+export type HostQuestion = {
+  id: string;
+  partId: string;
+  topicId: string | null;
+  text: string;
+  addressed: boolean;
+  createdAt: string;
+};
+export type HostTopic = {
+  id: string;
+  partId: string;
+  title: string;
+  status: TopicStatus;
+  reply: string | null;
+  meTooCount: number;
+  createdAt: string;
+};
+/** What every student sees about a topic (no questions, no identities). */
+export type PublicTopic = {
+  id: string;
+  title: string;
+  status: TopicStatus;
+  reply: string | null;
+  meTooCount: number;
+  questionCount: number;
+};
+export type StudentTopic = PublicTopic & { iMeToo: boolean };
+
 export type HostState = {
   version: number;
   session: HostSession;
-  parts: unknown[]; // Phase 3
-  questions: unknown[]; // Phase 3
-  topics: unknown[]; // Phase 3
+  parts: HostPart[]; // ordered by number
+  questions: HostQuestion[]; // newest first
+  topics: HostTopic[];
   activities: unknown[]; // Phase 4
   liveActivityId: string | null;
 };
@@ -81,8 +111,9 @@ export type StudentState = {
   session: { id: string; topic: string; status: SessionStatus };
   liveActivity: null; // Phase 4
   myResponse: null; // Phase 4
-  myQuestions: { text: string; createdAt: string }[]; // Phase 3
-  topics: unknown[]; // Phase 3
+  // No `myQuestions` from the server: a stealth-blocked question is never stored, so a server list would
+  // reveal the block. "My questions" is kept on the phone (spec E: "from localStorage").
+  topics: StudentTopic[]; // sorted (sortTopics)
   takeawayPublished: boolean;
 };
 

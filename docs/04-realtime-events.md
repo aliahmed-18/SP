@@ -13,7 +13,7 @@ Put all event names and payload types in `shared/src/events.ts` and use typed So
 - A student socket on a LIVE session also registers the device as a Participant (idempotent), so a phone that opens `/s/:code` directly is counted once.
 - On **every connect / reconnect**, the server immediately emits a full snapshot (`state:student` / `state:host` / `state:present`). Clients **replace** their state with it.
 - Also: client re-requests the snapshot (`state:request`) when the tab becomes visible again or the browser goes back online.
-- Every snapshot and event includes `version` (session.version). If a client receives an event with `version > local + 1`, it requests a fresh snapshot.
+- Every snapshot and every **host** event includes `version` (session.version, bumped by every write). If the host receives an event with `version > local + 1`, it requests a fresh snapshot; `version <= local` is ignored. Students don't see every write, so they rely on snapshots (connect / focus / online) instead of gap detection.
 - Use Socket.io's default reconnection; show a small "Reconnecting…" banner while disconnected.
 
 ## Three different views of the same data (DTO builders in `server/src/realtime/broadcast.ts`)
@@ -26,7 +26,8 @@ Put all event names and payload types in `shared/src/events.ts` and use typed So
 StudentState = { version, session: { id, topic, status },   // id = session uuid, used to key local history
   liveActivity: StudentActivity | null,
   myResponse: { round, answer, confident } | null,     // so a refreshed phone shows "Answer sent"
-  myQuestions: { text, createdAt }[],
+  // no myQuestions: a stealth-blocked question is never stored, so a server list would reveal the block.
+  // "My questions" lives in the phone's localStorage (spec E).
   topics: { id, title, status, reply, meTooCount, iMeToo }[],
   takeawayPublished: boolean }
 HostState = { version, session: { id, code, topic, status, academicMode, joinedCount, flaggedCount },
@@ -56,8 +57,11 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 | `state:student` / `state:host` / `state:present` | the socket | snapshot |
 | `session:joined` | host, present | `{ joinedCount }` |
 | `question:new` | host | `HostQuestion` (no hash) |
-| `question:updated` / `question:removed` | host | |
-| `topics:updated` | students, host | full topic list for that audience (students: `iMeToo` computed per socket → emit per socket or let client refetch) |
+| `question:updated` / `question:removed` | host | `{ version, question }` / `{ version, questionId, flaggedCount, part }` |
+| `state:host` (pushed) | host | after structural Q&A changes (topic create/move/rename/status/delete, new part) |
+| `topics:updated` | students | `{ topics: PublicTopic[] }` sorted; no `iMeToo` (each phone keeps its own from the snapshot + its acks) |
+| `topics:host` | host | `{ version, topics: HostTopic[] }` (Me too counts changed) |
+| `qa:flagged` | host | `{ version, flaggedCount, part: { id, flaggedCount } }` (a question was stealth-blocked) |
 | `activity:updated` | students (student DTO), host, present | the activity in the right DTO |
 | `activity:stats` | host, present | `{ activityId, round, responses, joined }` (throttle to max 4/s) |
 | `present:projected` | present | `ProjectedItem` |

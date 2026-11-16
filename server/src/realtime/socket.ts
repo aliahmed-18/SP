@@ -16,9 +16,10 @@ import { hashDevice } from '../lib/deviceHash';
 import { joinSession } from '../services/participants';
 import { findHostSession, findPublicSession } from '../services/sessions';
 import { buildHostState, buildPresentState, buildStudentState, setIo } from './broadcast';
+import { registerStudentHandlers } from './student-handlers';
 
 export type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
-type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
+export type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
 export function createSocketServer(httpServer: HttpServer): IoServer {
   const io: IoServer = new Server(httpServer, {
@@ -78,6 +79,8 @@ async function onConnection(socket: IoSocket) {
         ack({ ok: false, error: { code: 'INTERNAL', message: 'Please try again.' } });
     }
   });
+
+  registerStudentHandlers(socket);
 
   try {
     if (role === 'student') {

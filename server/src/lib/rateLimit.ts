@@ -19,6 +19,17 @@ export class FixedWindowLimiter {
     return entry.count <= this.max;
   }
 
+  /** True if `key` already used up its allowance in the current window (does not count a hit). */
+  isBlocked(key: string, now = Date.now()): boolean {
+    const entry = this.hits.get(key);
+    return !!entry && entry.resetAt > now && entry.count >= this.max;
+  }
+
+  /** Forget one key (e.g. after a successful login). */
+  clear(key: string) {
+    this.hits.delete(key);
+  }
+
   reset() {
     this.hits.clear();
   }

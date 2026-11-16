@@ -81,12 +81,33 @@ describe('auth', () => {
     expect(res.status).toBe(401);
   });
 
-  it('rate-limits repeated logins', async () => {
+  it('rate-limits repeated failed logins, even with the right password afterwards', async () => {
     const { email } = await newInstructor();
     let last = 0;
     for (let i = 0; i < 21; i++) {
       last = (await request(app).post('/api/auth/login').send({ email, password: 'wrong-wrong' })).status;
     }
     expect(last).toBe(429);
+    expect((await request(app).post('/api/auth/login').send({ email, password: 'password123' })).status).toBe(
+      429,
+    );
+  });
+
+  it('successful logins never count toward the limit (rehearsals log in many times)', async () => {
+    const { email } = await newInstructor();
+    for (let i = 0; i < 25; i++) {
+      expect(
+        (await request(app).post('/api/auth/login').send({ email, password: 'password123' })).status,
+      ).toBe(200);
+    }
+    // A success also clears earlier failures.
+    for (let i = 0; i < 19; i++)
+      await request(app).post('/api/auth/login').send({ email, password: 'nope-nope' });
+    expect((await request(app).post('/api/auth/login').send({ email, password: 'password123' })).status).toBe(
+      200,
+    );
+    expect((await request(app).post('/api/auth/login').send({ email, password: 'nope-nope' })).status).toBe(
+      401,
+    );
   });
 });

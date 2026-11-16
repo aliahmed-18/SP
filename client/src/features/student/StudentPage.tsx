@@ -1,33 +1,50 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Check, CircleStop } from 'lucide-react';
 import { useParams } from 'react-router';
-import { normalizeJoinCode, type StudentState } from '@getit/shared';
+import { normalizeJoinCode } from '@getit/shared';
 import { LoadingState } from '@/components/brand/brand';
 import { ReconnectingBanner } from '@/components/layout/ReconnectingBanner';
-import { useLiveSocket } from '@/hooks/use-live-socket';
-import type { GetitSocket } from '@/lib/socket';
+import { getMyQuestions, type MyQuestion } from '@/lib/local-history';
+import { AskBox } from './AskBox';
 import { InvalidSession } from './InvalidSession';
+import { MyQuestions } from './MyQuestions';
 import { StudentHeader } from './StudentHeader';
+import { TopicsList } from './TopicsList';
+import { useStudentState } from './use-student-state';
 
-/** `/s/:code` — the phone screen (shots 20–29). Phase 2: joined + ended states. */
+/** `/s/:code` — the phone screen (shots 20–29). */
 export function StudentPage() {
   const code = normalizeJoinCode(useParams().code ?? '');
-  const [state, setState] = useState<StudentState | null>(null);
-
-  const register = useCallback((s: GetitSocket) => {
-    s.on('state:student', setState);
-    s.on('session:ended', () =>
-      setState((prev) => (prev ? { ...prev, session: { ...prev.session, status: 'ENDED' } } : prev)),
-    );
-  }, []);
-  const { status } = useLiveSocket('student', code, register);
+  const { state, status, getSocket, applyMeToo } = useStudentState(code);
 
   if (status === 'refused') return <InvalidSession code={code} />;
   if (!state) return <LoadingState text="Joining the lecture…" />;
-
-  const ended = state.session.status === 'ENDED';
+  // Keyed by session id so the local list/draft reload when the code points at a new lecture.
   return (
-    <div className="min-h-dvh">
+    <StudentView
+      key={state.session.id}
+      state={state}
+      status={status}
+      getSocket={getSocket}
+      applyMeToo={applyMeToo}
+    />
+  );
+}
+
+function StudentView({
+  state,
+  status,
+  getSocket,
+  applyMeToo,
+}: Pick<ReturnType<typeof useStudentState>, 'getSocket' | 'applyMeToo' | 'status'> & {
+  state: NonNullable<ReturnType<typeof useStudentState>['state']>;
+}) {
+  const sessionId = state.session.id;
+  const [mine, setMine] = useState<MyQuestion[]>(() => getMyQuestions(sessionId));
+  const ended = state.session.status === 'ENDED';
+
+  return (
+    <div className="min-h-dvh pb-10">
       <ReconnectingBanner status={status} />
       <StudentHeader topic={state.session.topic} />
       <main className="mx-auto flex max-w-xl flex-col gap-6 px-4 py-6">
@@ -47,18 +64,29 @@ export function StudentPage() {
             </p>
           </section>
         ) : (
-          <section className="fade-in flex items-start gap-4" aria-live="polite">
-            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-accent text-primary">
-              <Check className="size-6" aria-hidden />
-            </span>
-            <div>
-              <h1 className="text-2xl font-semibold">You're in</h1>
-              <p className="text-muted-foreground">
-                Ask anything, any time. The instructor never sees who asked.
-              </p>
-            </div>
-          </section>
+          <>
+            <section className="fade-in flex items-start gap-4" aria-live="polite">
+              <span className="grid size-12 shrink-0 place-items-center rounded-full bg-accent text-primary">
+                <Check className="size-6" aria-hidden />
+              </span>
+              <div>
+                <h1 className="text-2xl font-semibold">You're in</h1>
+                <p className="text-muted-foreground">
+                  Ask anything, any time. The instructor never sees who asked.
+                </p>
+              </div>
+            </section>
+            <AskBox
+              sessionId={sessionId}
+              getSocket={getSocket}
+              online={status === 'connected'}
+              sentCount={mine.length}
+              onSent={setMine}
+            />
+          </>
         )}
+        <MyQuestions questions={mine} />
+        <TopicsList topics={state.topics} getSocket={getSocket} canMeToo={!ended} applyMeToo={applyMeToo} />
       </main>
     </div>
   );

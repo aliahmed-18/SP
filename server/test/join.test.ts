@@ -30,9 +30,11 @@ describe('student join (public, anonymous)', () => {
     expect(r2.status).toBe(200);
     expect(r1.body).toMatchObject({
       session: { id: s.id, status: 'LIVE' },
-      myQuestions: [],
+      topics: [],
       liveActivity: null,
     });
+    // Stealth: the server never lists "my questions" (a blocked one would be visibly missing).
+    expect(r1.body).not.toHaveProperty('myQuestions');
 
     const rows = await prisma.participant.findMany({ where: { sessionId: s.id } });
     expect(rows).toHaveLength(1);

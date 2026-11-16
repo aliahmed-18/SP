@@ -10,6 +10,12 @@ export const LIMITS = {
   emailMax: 254,
   courseNameMax: 100,
   lectureTopicMax: 80,
+  questionMax: 300,
+  topicTitleMax: 100,
+  replyMax: 2000,
+  /** Rule 6: min gap between questions per device, max questions per device per session. */
+  questionMinGapMs: 5_000,
+  questionsPerDevice: 40,
 } as const;
 
 export const INVALID_CODE_MESSAGE = "That session doesn't exist or has expired.";
@@ -76,3 +82,48 @@ export const socketAuthSchema = z.discriminatedUnion('role', [
 ]);
 export type SocketAuth = z.input<typeof socketAuthSchema>;
 export type SocketRole = SocketAuth['role'];
+
+// ─── Q&A (Phase 3) ──────────────────────────────────────────────────────────
+
+/** Raw text from the phone; the server cleans + moderates it (moderation.ts). Upper bound only guards size. */
+export const askQuestionSchema = z.object({ text: z.string().max(4000) });
+
+export const meTooSchema = z.object({ topicId: z.string().uuid(), on: z.boolean() });
+
+const topicTitle = z
+  .string()
+  .trim()
+  .min(1, 'Enter a topic title.')
+  .max(LIMITS.topicTitleMax, `Topic title must be ${LIMITS.topicTitleMax} characters or fewer.`);
+const questionIds = z.array(z.string().uuid()).max(500);
+
+export const createTopicSchema = z.object({ title: topicTitle, questionIds: questionIds.default([]) });
+export type CreateTopicInput = z.input<typeof createTopicSchema>;
+
+export const updateTopicSchema = z
+  .object({
+    title: topicTitle.optional(),
+    status: z.enum(['OPEN', 'ANSWERED_IN_CLASS', 'REPLIED']).optional(),
+    reply: z
+      .string()
+      .trim()
+      .max(LIMITS.replyMax, `Reply must be ${LIMITS.replyMax} characters or fewer.`)
+      .nullable()
+      .optional(),
+  })
+  .refine(
+    (d) => d.status !== 'REPLIED' || (d.reply !== undefined && d.reply !== null && d.reply.length > 0),
+    {
+      message: 'Write a reply first.',
+    },
+  );
+export type UpdateTopicInput = z.input<typeof updateTopicSchema>;
+
+export const moveQuestionsSchema = z.object({
+  questionIds: questionIds.min(1, 'Select at least one question.'),
+});
+
+export const updateQuestionSchema = z
+  .object({ addressed: z.boolean().optional(), topicId: z.string().uuid().nullable().optional() })
+  .refine((d) => d.addressed !== undefined || d.topicId !== undefined, { message: 'Nothing to change.' });
+export type UpdateQuestionInput = z.input<typeof updateQuestionSchema>;

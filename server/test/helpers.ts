@@ -108,3 +108,28 @@ export async function socketToken(agent: ReturnType<typeof request.agent>) {
   const res = await agent.get('/api/auth/socket-token');
   return res.body.token as string;
 }
+
+/** Resolves with the first `event` whose payload matches `predicate` (skips stale ones). */
+export function eventWhere<E extends keyof ServerToClientEvents>(
+  client: TestClient,
+  event: E,
+  predicate: (payload: Parameters<ServerToClientEvents[E]>[0]) => boolean,
+  timeoutMs = 3000,
+): Promise<Parameters<ServerToClientEvents[E]>[0]> {
+  return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c = client as any;
+    const t = setTimeout(() => {
+      c.off(event, on);
+      reject(new Error(`timeout waiting for matching ${event}`));
+    }, timeoutMs);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const on = (payload: any) => {
+      if (!predicate(payload)) return;
+      clearTimeout(t);
+      c.off(event, on);
+      resolve(payload);
+    };
+    c.on(event, on);
+  });
+}

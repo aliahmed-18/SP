@@ -1,24 +1,9 @@
-import { devices, expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { phone, registerInstructor } from './helpers';
 
 // Phase 2 "done when": an instructor starts a session on a laptop, 2 phones join, the joined count
 // updates live on the host (and the projector). One instructor + 2 phones = 3 browser contexts.
 test.skip(({ isMobile }) => isMobile, 'multi-device flow runs once (laptop project)');
-
-async function phone(browser: Browser) {
-  const ctx = await browser.newContext({ ...devices['Pixel 7'] });
-  return ctx.newPage();
-}
-
-async function registerInstructor(page: Page) {
-  const email = `e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
-  await page.goto('/register');
-  await page.getByLabel('Name').fill('Dr. E2E');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('password123');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
-  return email;
-}
 
 test('register → course → start session → 2 phones join → live joined count', async ({
   page,

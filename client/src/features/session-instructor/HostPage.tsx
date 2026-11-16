@@ -92,7 +92,7 @@ export function HostPage() {
         </div>
       )}
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_380px]">
+      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_400px] lg:items-start">
         <div className="flex min-w-0 flex-col gap-6">
           <h1 className="text-2xl font-semibold sm:text-3xl" dir="auto">
             <span className="font-normal text-muted-foreground">Topic: </span>
@@ -142,7 +142,7 @@ export function HostPage() {
           )}
         </div>
 
-        <QaPanel onShowQr={() => setQrOpen(true)} ended={ended} />
+        <QaPanel state={state} onShowQr={() => setQrOpen(true)} />
       </main>
 
       <QrDialog code={session.code} open={qrOpen} onOpenChange={setQrOpen} />

@@ -38,6 +38,10 @@ export default tseslint.config(
     },
   },
   {
+    files: ['shared/src/moderation.ts'], // ported verbatim from reference/ (CLAUDE.md): keep it identical
+    rules: { 'no-useless-escape': 'off' },
+  },
+  {
     files: ['client/src/router.tsx', 'client/src/main.tsx'], // route table, not a component module
     rules: { 'react-refresh/only-export-components': 'off' },
   },

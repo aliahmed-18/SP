@@ -9,6 +9,7 @@ import { authRouter } from './auth/routes';
 import { coursesRouter } from './routes/courses';
 import { healthRouter } from './routes/health';
 import { publicRouter } from './routes/public';
+import { qaRouter } from './routes/qa';
 import { sessionsRouter } from './routes/sessions';
 
 const clientDist = fileURLToPath(new URL('../../client/dist', import.meta.url));
@@ -33,6 +34,7 @@ export function createApp() {
   api.use(coursesRouter);
   api.use(sessionsRouter);
   api.use(publicRouter);
+  api.use(qaRouter);
   api.use(notFoundApi);
   app.use('/api', api);
 

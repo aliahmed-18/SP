@@ -10,3 +10,5 @@ server/prisma/migrations
 client/src/components/brand/
 *.md
 client/src/styles.css
+shared/src/moderation.ts
+shared/src/moderation.test.ts

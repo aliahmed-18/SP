@@ -1,9 +1,18 @@
 // DTO builders (allow-lists, never spread DB rows) + emit helpers. docs/04 §"Three different views".
-import { rooms, type HostState, type PresentState, type StudentState } from '@getit/shared';
+import {
+  rooms,
+  sortTopics,
+  type HostState,
+  type PresentState,
+  type PublicTopic,
+  type ServerToClientEvents,
+  type StudentState,
+} from '@getit/shared';
 import type { Session } from '@prisma/client';
 import { prisma } from '../db';
 import { bus } from '../lib/bus';
 import { countJoined } from '../services/participants';
+import { toHostPart, toHostQuestion, toHostTopic, toPublicTopic } from './dto';
 import type { IoServer } from './socket';
 
 let io: IoServer | null = null;
@@ -18,6 +27,11 @@ async function loadSession(sessionId: string): Promise<Session> {
 
 export async function buildHostState(sessionId: string): Promise<HostState> {
   const s = await loadSession(sessionId);
+  const [parts, questions, topics] = await Promise.all([
+    prisma.part.findMany({ where: { sessionId }, orderBy: { number: 'asc' } }),
+    prisma.question.findMany({ where: { sessionId }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }] }),
+    prisma.topic.findMany({ where: { sessionId }, orderBy: { createdAt: 'asc' } }),
+  ]);
   return {
     version: s.version,
     session: {
@@ -32,12 +46,26 @@ export async function buildHostState(sessionId: string): Promise<HostState> {
       endedAt: s.endedAt?.toISOString() ?? null,
       courseId: s.courseId,
     },
-    parts: [],
-    questions: [],
-    topics: [],
+    parts: parts.map(toHostPart),
+    questions: questions.map(toHostQuestion),
+    topics: topics.map(toHostTopic),
     activities: [],
     liveActivityId: s.liveActivityId,
   };
+}
+
+/** The class's topic list as students see it, sorted (Me too, then question count). */
+export async function buildPublicTopics(sessionId: string): Promise<PublicTopic[]> {
+  const topics = await prisma.topic.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: 'asc' },
+    include: { _count: { select: { questions: true } } },
+  });
+  const dtos = topics.map((t) => toPublicTopic(t, t._count.questions));
+  return sortTopics(
+    dtos,
+    dtos.flatMap((t) => Array.from({ length: t.questionCount }, () => ({ topicId: t.id }))),
+  );
 }
 
 export async function buildPresentState(sessionId: string): Promise<PresentState> {
@@ -52,16 +80,20 @@ export async function buildPresentState(sessionId: string): Promise<PresentState
 }
 
 /** `deviceHash` is used only to look up this device's own data; it is never part of the payload. */
-export async function buildStudentState(sessionId: string, _deviceHash: string): Promise<StudentState> {
+export async function buildStudentState(sessionId: string, deviceHash: string): Promise<StudentState> {
   const s = await loadSession(sessionId);
-  const takeaway = await prisma.takeaway.findUnique({ where: { sessionId }, select: { status: true } });
+  const [takeaway, topics, mine] = await Promise.all([
+    prisma.takeaway.findUnique({ where: { sessionId }, select: { status: true } }),
+    buildPublicTopics(sessionId),
+    prisma.meToo.findMany({ where: { deviceHash, topic: { sessionId } }, select: { topicId: true } }),
+  ]);
+  const meToo = new Set(mine.map((m) => m.topicId));
   return {
     version: s.version,
     session: { id: s.id, topic: s.topic, status: s.status },
     liveActivity: null,
     myResponse: null,
-    myQuestions: [],
-    topics: [],
+    topics: topics.map((t) => ({ ...t, iMeToo: meToo.has(t.id) })),
     takeawayPublished: takeaway?.status === 'PUBLISHED',
   };
 }
@@ -103,4 +135,44 @@ export async function emitSnapshots(sessionId: string) {
         sock.emit('state:student', await buildStudentState(sessionId, sock.data.deviceHash));
     }),
   );
+}
+
+// ─── Q&A emits (after the transaction committed) ─────────────────────────────
+
+type HostEvent = 'question:new' | 'question:updated' | 'question:removed' | 'qa:flagged' | 'topics:host';
+
+export function emitToHost<E extends HostEvent>(
+  sessionId: string,
+  event: E,
+  ...payload: Parameters<ServerToClientEvents[E]>
+) {
+  io?.to(rooms.host(sessionId)).emit(event, ...payload);
+}
+
+/** Structural change (topics created/moved/deleted, new part): the host gets a fresh snapshot. */
+export async function emitHostSnapshot(sessionId: string) {
+  const server = io;
+  if (!server) return;
+  server.to(rooms.host(sessionId)).emit('state:host', await buildHostState(sessionId));
+}
+
+/** Students' topic list changed (title, status, reply, Me too, membership). */
+export async function emitStudentTopics(sessionId: string) {
+  const server = io;
+  if (!server) return;
+  server.to(rooms.students(sessionId)).emit('topics:updated', { topics: await buildPublicTopics(sessionId) });
+}
+
+/** Me too changed counts only: lightweight update for the host + the class list for students. */
+export async function emitTopicCounts(sessionId: string, version: number) {
+  const server = io;
+  if (!server) return;
+  const topics = await prisma.topic.findMany({ where: { sessionId }, orderBy: { createdAt: 'asc' } });
+  server.to(rooms.host(sessionId)).emit('topics:host', { version, topics: topics.map(toHostTopic) });
+  await emitStudentTopics(sessionId);
+}
+
+/** Log and swallow emit failures: the DB write already succeeded, clients resync on the next snapshot. */
+export function safeEmit(p: Promise<unknown>) {
+  p.catch((err) => console.error('[getit] emit failed', err));
 }

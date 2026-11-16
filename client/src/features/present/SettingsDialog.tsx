@@ -28,7 +28,8 @@ export function SettingsDialog({
           <Settings className="size-5" />
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      {/* Don't hand focus back to the gear: a focus ring would stay on the projector all lecture. */}
+      <DialogContent onCloseAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Run in class</DialogTitle>
           <DialogDescription>

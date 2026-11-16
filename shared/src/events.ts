@@ -11,8 +11,10 @@ import type {
   PresentState,
   PublicTopic,
   StudentActivity,
+  ProjectedView,
   StudentState,
 } from './types';
+import type { PresentSettings, ProjectedItem } from './schemas';
 import type { Answer } from './rules';
 import type { SocketRole } from './schemas';
 
@@ -51,10 +53,16 @@ export interface ClientToServerEvents {
     ack: (res: Ack<MyResponse>) => void,
   ) => void;
   // Host / projector lifecycle (one LIVE activity per session).
-  'activity:launch': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
+  'activity:launch': (payload: { activityId: string; timerSec?: number }, ack: (res: Ack) => void) => void;
   'activity:close': (payload: { activityId: string; reveal?: boolean }, ack: (res: Ack) => void) => void;
   'activity:reveal': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
-  'activity:newRound': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
+  'activity:newRound': (payload: { activityId: string; timerSec?: number }, ack: (res: Ack) => void) => void;
+  /** Projector timer chip: +15 s. */
+  'activity:addTime': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
+  /** Host / projector: what the projector shows instead of the activity (null = back to it). */
+  'present:project': (payload: { item: ProjectedItem | null }, ack: (res: Ack) => void) => void;
+  /** Projector settings (timer, auto-reveal), stored on the session. */
+  'present:settings': (payload: PresentSettings, ack: (res: Ack) => void) => void;
   'activity:undo': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
 }
 
@@ -82,11 +90,14 @@ export interface ServerToClientEvents {
     liveActivityId: string | null;
     stageActivityId: string | null;
   }) => void;
+  /** Projector (and host): the projected item changed. */
+  'present:projected': (payload: { projected: ProjectedView | null }) => void;
   /** Projector: same, projector DTO. */
   'activity:present': (payload: {
     activity: PresentActivity;
     liveActivityId: string | null;
     stageActivityId: string | null;
+    serverTime: string;
   }) => void;
   /** Students: the activity on stage (student DTO — no answer before REVEALED), or null. */
   'activity:student': (payload: { activity: StudentActivity | null }) => void;

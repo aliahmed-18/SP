@@ -46,12 +46,14 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 | `activity:answer` | student | `{ activityId, round, answer }` | must be LIVE + current round; duplicate → ack with the existing answer |
 | `activity:confidence` | student | `{ activityId, round, confident: boolean \| null }` | update own response |
 | `explain:submit` | student | `{ activityId, text }` | moderate (stealth), one per device |
-| `activity:launch` | host/present | `{ activityId }` | one-live rule |
+| `activity:launch` | host/present | `{ activityId, timerSec? }` | one-live rule; `timerSec` sets `closesAt`; clears any projected item |
 | `activity:close` | host/present | `{ activityId, reveal?: boolean }` | |
 | `activity:reveal` | host/present | `{ activityId }` | |
-| `activity:newRound` | host/present | `{ activityId }` | round++ and LIVE again |
-| `activity:undo` | present | `{ activityId }` | step back one status (REVEALED→CLOSED→LIVE) |
-| `present:project` | host | `{ kind: "topic" \| "misconception" \| "welcome" \| "blank", id? }` | |
+| `activity:newRound` | host/present | `{ activityId, timerSec? }` | round++ and LIVE again |
+| `activity:undo` | present | `{ activityId }` | step back one step: REVEALED→CLOSED→LIVE; a LIVE question **nobody answered yet** → DRAFT (round 1, stage returns to the previous activity) or CLOSED round n−1 (mis-pressed clicker) |
+| `activity:addTime` | host/present | `{ activityId }` | +15 s on a running timer |
+| `present:settings` | host/present | `{ timerSec: 0\|30\|60\|90, autoReveal }` | stored in `Session.presentSettings` (survives a projector refresh; used by the auto-close) |
+| `present:project` | host/present | `{ item: { kind: "welcome" \| "blank" \| "wrap" } \| { kind: "topic", id } \| null }` | stored in `Session.projected`; `null` = back to the activity. (`misconception` arrives with Explain in Phase 6.) |
 
 ## Server → Client
 | Event | To rooms | Payload |
@@ -68,7 +70,7 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 | `activity:present` | present | `{ activity: PresentActivity, liveActivityId, stageActivityId }` |
 | `activity:student` | students | `{ activity: StudentActivity \| null }` — only the activity **on stage**; phones reset `myResponse` when the id or round changes |
 | `activity:stats` | host, present | `{ activityId, round, responses, joined }` (throttle to max 4/s) |
-| `present:projected` | present | `ProjectedItem` |
+| `present:projected` | present | `{ projected: ProjectedView \| null }` (a topic comes resolved: title, anonymous questions, counts, reply); the host gets a fresh `state:host` with `projectedTopicId` |
 | `session:ended` | all | `{ endedAt }` |
 | `takeaway:published` | students | – (client fetches `/public/.../takeaway`) |
 
@@ -77,3 +79,8 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 - Never emit to `s:{id}:students` anything built by a host DTO. Write a unit test that asserts the student DTO of a LIVE Quick Check has no `correct` / `explanation`.
 - Throttle stats broadcasts; a class of 100 answering at once must not flood the projector.
 - Socket handlers validate payloads with zod and wrap everything in try/catch → `ack({ ok:false, error })`.
+
+## Timers (Phase 5)
+- `Activity.closesAt` is set on launch / new round when the projector has a timer; `+15 s` moves it.
+- The server keeps one in-memory timeout per running question and closes it at `closesAt` (revealing if `presentSettings.autoReveal`). On startup and every minute it re-arms running timers and closes overdue ones, so a server restart or a closed projector tab never leaves a question open.
+- Snapshots / `activity:present` carry `serverTime`; the projector computes its clock offset from it, so the countdown is right even if the laptop clock is off.

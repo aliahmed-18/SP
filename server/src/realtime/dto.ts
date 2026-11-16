@@ -67,6 +67,7 @@ export function toStudentActivity(a: Activity): StudentActivity {
     options: asOptions(a.options),
     status: a.status,
     round: a.round,
+    closesAt: a.status === 'LIVE' ? (a.closesAt?.toISOString() ?? null) : null,
   };
   if (a.status !== 'REVEALED' || a.type !== 'QUICK_CHECK') return base;
   const correct = asAnswer(a.correct);
@@ -92,6 +93,7 @@ export function toHostActivity(a: Activity, stats: RoundStats[]): HostActivity {
     status: a.status,
     round: a.round,
     position: a.position,
+    closesAt: a.status === 'LIVE' ? (a.closesAt?.toISOString() ?? null) : null,
     stats,
   };
 }

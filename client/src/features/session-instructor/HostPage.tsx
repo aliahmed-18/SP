@@ -15,6 +15,7 @@ import { api, ApiRequestError } from '@/lib/api';
 import { openPresentWindow } from '@/lib/links';
 import { ActivitiesSection } from './activities/ActivitiesSection';
 import { EndSessionDialog } from './EndSessionDialog';
+import { HostContext } from './host-context';
 import { InviteCard } from './InviteCard';
 import { QaPanel } from './QaPanel';
 import { QrDialog } from './QrDialog';
@@ -56,87 +57,90 @@ export function HostPage() {
   }
 
   return (
-    <div className="min-h-dvh">
-      <ReconnectingBanner status={status} />
-      <AppHeader
-        left={
-          ended ? (
-            <Badge variant="secondary" className="text-sm">
-              <CircleStop aria-hidden /> Ended
-            </Badge>
-          ) : undefined
-        }
-        right={
-          <UserMenu>
-            {!ended && (
-              <DropdownMenuItem variant="destructive" onSelect={() => setEndOpen(true)}>
-                <CircleStop /> End session
-              </DropdownMenuItem>
-            )}
-          </UserMenu>
-        }
-      />
+    <HostContext.Provider value={{ getSocket, projectedTopicId: state.projectedTopicId }}>
+      <div className="min-h-dvh">
+        <ReconnectingBanner status={status} />
+        <AppHeader
+          left={
+            ended ? (
+              <Badge variant="secondary" className="text-sm">
+                <CircleStop aria-hidden /> Ended
+              </Badge>
+            ) : undefined
+          }
+          right={
+            <UserMenu>
+              {!ended && (
+                <DropdownMenuItem variant="destructive" onSelect={() => setEndOpen(true)}>
+                  <CircleStop /> End session
+                </DropdownMenuItem>
+              )}
+            </UserMenu>
+          }
+        />
 
-      {ended && (
-        <div className="border-b bg-muted">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-            <p className="flex-1 text-sm">
-              <strong>Ended.</strong> Students now see that the lecture has ended. This session stays in your
-              dashboard.
-            </p>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/dashboard">
-                <Plus /> Start a new session
-              </Link>
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_400px] lg:items-start">
-        <div className="flex min-w-0 flex-col gap-6">
-          <h1 className="text-2xl font-semibold sm:text-3xl" dir="auto">
-            <span className="font-normal text-muted-foreground">Topic: </span>
-            {session.topic}
-          </h1>
-
-          {!ended && (
-            <InviteCard
-              code={session.code}
-              joinedCount={session.joinedCount}
-              onShowQr={() => setQrOpen(true)}
-            />
-          )}
-
-          <ActivitiesSection state={state} liveStats={liveStats} getSocket={getSocket} />
-
-          {!ended && (
-            <div className="flex flex-col items-center gap-2">
-              <Button
-                size="lg"
-                className="h-14 w-full text-lg"
-                onClick={() => openPresentWindow(session.code)}
-              >
-                <Play /> Start presenting
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                Opens the projector screen with the QR and join code.
+        {ended && (
+          <div className="border-b bg-muted">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+              <p className="flex-1 text-sm">
+                <strong>Ended.</strong> Students now see that the lecture has ended. This session stays in
+                your dashboard.
               </p>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/dashboard">
+                  <Plus /> Start a new session
+                </Link>
+              </Button>
             </div>
-          )}
+          </div>
+        )}
 
-          {ended && (
-            <p className="text-sm text-muted-foreground">
-              {session.joinedCount} {session.joinedCount === 1 ? 'student' : 'students'} joined this session.
-            </p>
-          )}
-        </div>
+        <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_400px] lg:items-start">
+          <div className="flex min-w-0 flex-col gap-6">
+            <h1 className="text-2xl font-semibold sm:text-3xl" dir="auto">
+              <span className="font-normal text-muted-foreground">Topic: </span>
+              {session.topic}
+            </h1>
 
-        <QaPanel state={state} onShowQr={() => setQrOpen(true)} />
-      </main>
+            {!ended && (
+              <InviteCard
+                code={session.code}
+                joinedCount={session.joinedCount}
+                onShowQr={() => setQrOpen(true)}
+              />
+            )}
 
-      <QrDialog code={session.code} open={qrOpen} onOpenChange={setQrOpen} />
-      <EndSessionDialog open={endOpen} onOpenChange={setEndOpen} onConfirm={() => void endSession()} />
-    </div>
+            <ActivitiesSection state={state} liveStats={liveStats} getSocket={getSocket} />
+
+            {!ended && (
+              <div className="flex flex-col items-center gap-2">
+                <Button
+                  size="lg"
+                  className="h-14 w-full text-lg"
+                  onClick={() => openPresentWindow(session.code)}
+                >
+                  <Play /> Start presenting
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  Opens the projector screen with the QR and join code.
+                </p>
+              </div>
+            )}
+
+            {ended && (
+              <p className="text-sm text-muted-foreground">
+                {session.joinedCount} {session.joinedCount === 1 ? 'student' : 'students'} joined this
+                session.
+              </p>
+            )}
+          </div>
+
+          <QaPanel state={state} onShowQr={() => setQrOpen(true)} />
+        </main>
+
+        <QrDialog code={session.code} open={qrOpen} onOpenChange={setQrOpen} />
+        <EndSessionDialog open={endOpen} onOpenChange={setEndOpen} onConfirm={() => void endSession()} />
+      </div>
+    </HostContext.Provider>
   );
 }

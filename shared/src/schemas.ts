@@ -215,3 +215,30 @@ export const confidenceSchema = z.object({
   round: z.number().int().min(1).max(50),
   confident: z.boolean().nullable(),
 });
+
+// ─── Present mode (Phase 5) ─────────────────────────────────────────────────
+
+export const TIMER_CHOICES = [0, 30, 60, 90] as const;
+export const ADD_TIME_SECONDS = 15;
+
+export const presentSettingsSchema = z.object({
+  timerSec: z.union([z.literal(0), z.literal(30), z.literal(60), z.literal(90)]),
+  autoReveal: z.boolean(),
+});
+export type PresentSettings = z.infer<typeof presentSettingsSchema>;
+export const DEFAULT_PRESENT_SETTINGS: PresentSettings = { timerSec: 0, autoReveal: true };
+
+/** What the projector shows instead of the stage activity (null = the activity / welcome). */
+export const projectSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('welcome') }),
+  z.object({ kind: z.literal('blank') }),
+  z.object({ kind: z.literal('wrap') }),
+  z.object({ kind: z.literal('topic'), id: z.string().uuid() }),
+]);
+export type ProjectedItem = z.infer<typeof projectSchema>;
+export const projectPayloadSchema = z.object({ item: projectSchema.nullable() });
+
+export const launchSchema = activityIdSchema.extend({
+  /** Projector: seconds until the question auto-closes (0/absent = no timer). */
+  timerSec: z.number().int().min(0).max(600).optional(),
+});

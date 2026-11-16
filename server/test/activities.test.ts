@@ -213,8 +213,10 @@ describe('lifecycle + one live activity', () => {
     expect((await act('activity:undo', a)).ok).toBe(true);
     expect((await status()).status).toBe('CLOSED');
     expect((await act('activity:undo', a)).ok).toBe(true);
-    expect((await status()).status).toBe('LIVE');
-    expect((await act('activity:undo', a)).ok).toBe(false);
+    expect(await status()).toMatchObject({ status: 'LIVE', round: 2 });
+    // Nobody answered round 2 yet: undo takes the round back.
+    expect((await act('activity:undo', a)).ok).toBe(true);
+    expect(await status()).toMatchObject({ status: 'CLOSED', round: 1 });
   });
 
   it('an Explain activity cannot be launched yet', async () => {

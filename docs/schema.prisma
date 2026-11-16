@@ -2,6 +2,7 @@
 // Refinements agreed in Phase 0 (marked "Phase 0" below):
 //   - Session.presentActivityId + Session.projected: the projector returns to the same screen after a refresh.
 //   - Activity.closesAt: the question timer lives on the server, so it survives a projector refresh.
+//   - Session.presentSettings (Phase 5): projector timer + auto-reveal, needed by the server-side auto-close.
 // Partial unique indexes Prisma can't express live in the first migration's raw SQL.
 
 generator client {
@@ -89,6 +90,7 @@ model Session {
   version          Int           @default(0) // bump on every change; clients compare to detect stale state
   presentActivityId String? // Phase 0: activity the projector is showing (stays set after CLOSED/REVEALED)
   projected        Json? // Phase 0: ProjectedItem on the projector ({ kind: welcome|blank|topic|misconception, id? }) or null
+  presentSettings  Json? // Phase 5: projector settings { timerSec: 0|30|60|90, autoReveal: boolean } — survive a projector refresh
   startedAt        DateTime      @default(now())
   endedAt          DateTime?
   participants     Participant[]

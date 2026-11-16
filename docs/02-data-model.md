@@ -5,6 +5,7 @@ The full Prisma schema is in `docs/schema.prisma` (validated with Prisma 6.19). 
 **Phase 0 refinements (approved):**
 - `Session.presentActivityId` + `Session.projected` — the projector returns to the same screen after a refresh.
 - `Activity.closesAt` — the question timer is server-side and auto-closes the activity; survives a projector refresh.
+- `Session.presentSettings` (Phase 5) — projector timer + auto-reveal; the server needs them for the auto-close, and a refreshed projector keeps them.
 - A stealth-blocked Explain answer is stored as a `Response` with `text = null` (one per device still holds; hidden from host, counted as flagged).
 - Join codes are reused after a session ends → students' local history is keyed by **session id** (sent in `StudentState`); `/public/sessions/:code` resolves the LIVE session, else the newest ENDED one within 24 h.
 - Topics belong to one Part: a topic only groups questions from its own part; new topics go into the current part.

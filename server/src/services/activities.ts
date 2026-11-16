@@ -1,5 +1,5 @@
 import { summarizeRound, type QuickCheckDraft, type RoundStats } from '@getit/shared';
-import type { Activity, Prisma } from '@prisma/client';
+import { Prisma, type Activity } from '@prisma/client';
 import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
 import { asAnswer } from '../realtime/dto';
@@ -187,7 +187,8 @@ async function requireLiveSession(tx: Prisma.TransactionClient, sessionId: strin
 async function claimLiveSlot(tx: Prisma.TransactionClient, sessionId: string, activityId: string) {
   const { count } = await tx.session.updateMany({
     where: { id: sessionId, liveActivityId: null },
-    data: { liveActivityId: activityId, presentActivityId: activityId },
+    // The new question takes the projector (replaces a projected topic / blank screen).
+    data: { liveActivityId: activityId, presentActivityId: activityId, projected: Prisma.DbNull },
   });
   if (count === 0) throw new HttpError(409, 'ONE_LIVE', ONE_LIVE_MESSAGE);
 }
@@ -206,7 +207,7 @@ async function lifecycle(fn: (tx: Prisma.TransactionClient) => Promise<Lifecycle
   }
 }
 
-export function launchActivity(sessionId: string, activityId: string) {
+export function launchActivity(sessionId: string, activityId: string, timerSec = 0) {
   return lifecycle(async (tx) => {
     await requireLiveSession(tx, sessionId);
     const a = await load(tx, sessionId, activityId);
@@ -214,9 +215,17 @@ export function launchActivity(sessionId: string, activityId: string) {
     if (a.type !== 'QUICK_CHECK')
       throw new HttpError(409, 'NOT_SUPPORTED', 'Explain activities are not available yet.');
     await claimLiveSlot(tx, sessionId, a.id);
-    return finish(tx, await tx.activity.update({ where: { id: a.id }, data: { status: 'LIVE' } }));
+    return finish(
+      tx,
+      await tx.activity.update({
+        where: { id: a.id },
+        data: { status: 'LIVE', closesAt: closesAtFrom(timerSec) },
+      }),
+    );
   });
 }
+
+const closesAtFrom = (timerSec: number) => (timerSec > 0 ? new Date(Date.now() + timerSec * 1000) : null);
 
 export function closeActivity(sessionId: string, activityId: string, reveal = false) {
   return lifecycle(async (tx) => {
@@ -227,7 +236,7 @@ export function closeActivity(sessionId: string, activityId: string, reveal = fa
       data: { liveActivityId: null },
     });
     const status = reveal && a.type === 'QUICK_CHECK' ? 'REVEALED' : 'CLOSED';
-    return finish(tx, await tx.activity.update({ where: { id: a.id }, data: { status } }));
+    return finish(tx, await tx.activity.update({ where: { id: a.id }, data: { status, closesAt: null } }));
   });
 }
 
@@ -246,12 +255,15 @@ export function revealActivity(sessionId: string, activityId: string) {
       });
     }
     await tx.session.update({ where: { id: sessionId }, data: { presentActivityId: a.id } });
-    return finish(tx, await tx.activity.update({ where: { id: a.id }, data: { status: 'REVEALED' } }));
+    return finish(
+      tx,
+      await tx.activity.update({ where: { id: a.id }, data: { status: 'REVEALED', closesAt: null } }),
+    );
   });
 }
 
 /** Vote again (peer instruction): same question, round + 1, LIVE. Only before the answer is shown. */
-export function newRound(sessionId: string, activityId: string) {
+export function newRound(sessionId: string, activityId: string, timerSec = 0) {
   return lifecycle(async (tx) => {
     await requireLiveSession(tx, sessionId);
     const a = await load(tx, sessionId, activityId);
@@ -267,12 +279,19 @@ export function newRound(sessionId: string, activityId: string) {
     await claimLiveSlot(tx, sessionId, a.id);
     return finish(
       tx,
-      await tx.activity.update({ where: { id: a.id }, data: { status: 'LIVE', round: { increment: 1 } } }),
+      await tx.activity.update({
+        where: { id: a.id },
+        data: { status: 'LIVE', round: { increment: 1 }, closesAt: closesAtFrom(timerSec) },
+      }),
     );
   });
 }
 
-/** Projector ←: step back one status. REVEALED → CLOSED → LIVE (same round; answers continue). */
+/**
+ * Projector ←: step back one step. REVEALED → CLOSED → LIVE (same round; answers continue).
+ * A LIVE question nobody has answered yet can also be taken back (a mis-pressed clicker):
+ * round 1 → DRAFT (stage goes back to the previous activity), round n > 1 → CLOSED round n − 1.
+ */
 export function undoActivity(sessionId: string, activityId: string) {
   return lifecycle(async (tx) => {
     const a = await load(tx, sessionId, activityId);
@@ -284,6 +303,55 @@ export function undoActivity(sessionId: string, activityId: string) {
       await claimLiveSlot(tx, sessionId, a.id);
       return finish(tx, await tx.activity.update({ where: { id: a.id }, data: { status: 'LIVE' } }));
     }
+    if (a.status === 'LIVE') {
+      const answered = await tx.response.count({ where: { activityId: a.id, round: a.round } });
+      if (answered > 0) {
+        throw new HttpError(
+          409,
+          'HAS_ANSWERS',
+          'Students have already answered. Close the question instead.',
+        );
+      }
+      await tx.session.updateMany({
+        where: { id: sessionId, liveActivityId: a.id },
+        data: { liveActivityId: null },
+      });
+      if (a.round > 1) {
+        return finish(
+          tx,
+          await tx.activity.update({
+            where: { id: a.id },
+            data: { status: 'CLOSED', round: { decrement: 1 }, closesAt: null },
+          }),
+        );
+      }
+      const previous = await tx.activity.findFirst({
+        where: { sessionId, position: { lt: a.position }, status: { not: 'DRAFT' } },
+        orderBy: { position: 'desc' },
+      });
+      await tx.session.update({
+        where: { id: sessionId },
+        data: { presentActivityId: previous?.id ?? null },
+      });
+      return finish(
+        tx,
+        await tx.activity.update({ where: { id: a.id }, data: { status: 'DRAFT', closesAt: null } }),
+      );
+    }
     throw new HttpError(409, 'NOTHING_TO_UNDO', 'Nothing to undo.');
+  });
+}
+
+/** Projector timer chip: +15 s on a running timer. */
+export function addTime(sessionId: string, activityId: string, seconds: number) {
+  return lifecycle(async (tx) => {
+    const a = await load(tx, sessionId, activityId);
+    if (a.status !== 'LIVE' || !a.closesAt)
+      throw new HttpError(409, 'NO_TIMER', 'This question has no running timer.');
+    const base = Math.max(a.closesAt.getTime(), Date.now());
+    return finish(
+      tx,
+      await tx.activity.update({ where: { id: a.id }, data: { closesAt: new Date(base + seconds * 1000) } }),
+    );
   });
 }

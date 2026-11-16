@@ -13,6 +13,7 @@ import { prisma } from '../db';
 import { bus } from '../lib/bus';
 import { statsFor } from '../services/activities';
 import { countJoined } from '../services/participants';
+import { buildProjectedView, readProjected, readSettings } from '../services/presentation';
 import { countResponses, myResponse } from '../services/responses';
 import {
   toHostActivity,
@@ -73,7 +74,14 @@ export async function buildHostState(sessionId: string): Promise<HostState> {
     activities: await Promise.all(activities.map(async (a) => toHostActivity(a, await statsFor(a)))),
     liveActivityId: s.liveActivityId,
     stageActivityId: s.presentActivityId,
+    projectedTopicId: projectedTopicId(s),
+    serverTime: new Date().toISOString(),
   };
+}
+
+function projectedTopicId(s: Session): string | null {
+  const item = readProjected(s.projected);
+  return item?.kind === 'topic' ? item.id : null;
 }
 
 /** The class's topic list as students see it, sorted (Me too, then question count). */
@@ -100,7 +108,9 @@ export async function buildPresentState(sessionId: string): Promise<PresentState
     ),
     liveActivityId: s.liveActivityId,
     stageActivityId: s.presentActivityId,
-    projected: null,
+    projected: await buildProjectedView(s.projected),
+    settings: readSettings(s.presentSettings),
+    serverTime: new Date().toISOString(),
   };
 }
 
@@ -226,15 +236,28 @@ export async function emitActivityChanged(r: {
   server
     .to(rooms.host(sessionId))
     .emit('activity:host', { version: r.version, activity: toHostActivity(r.activity, stats), ...ids });
-  server
-    .to(rooms.present(sessionId))
-    .emit('activity:present', { activity: toPresentActivity(r.activity, stats), ...ids });
+  server.to(rooms.present(sessionId)).emit('activity:present', {
+    activity: toPresentActivity(r.activity, stats),
+    ...ids,
+    serverTime: new Date().toISOString(),
+  });
   const onStage = r.stageActivityId === r.activity.id && r.activity.status !== 'DRAFT';
   if (onStage) {
     server
       .to(rooms.students(sessionId))
       .emit('activity:student', { activity: toStudentActivity(r.activity) });
   }
+}
+
+/** The projected item changed: projector gets the resolved view, host gets a fresh snapshot (topic button). */
+export async function emitProjected(sessionId: string) {
+  const server = io;
+  if (!server) return;
+  const s = await loadSession(sessionId);
+  server
+    .to(rooms.present(sessionId))
+    .emit('present:projected', { projected: await buildProjectedView(s.projected) });
+  server.to(rooms.host(sessionId)).emit('state:host', await buildHostState(sessionId));
 }
 
 // Live answer counts, throttled per activity to at most one emit every 250 ms (≤ 4/s, docs/04).

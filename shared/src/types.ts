@@ -104,6 +104,8 @@ export type StudentActivity = {
   correct?: Answer;
   explanation?: string;
   tolerance?: number | null;
+  /** Server time when the question auto-closes (timer), or null. Not a leak: everyone sees the timer. */
+  closesAt: string | null;
 };
 
 /** This device's answer for the activity's current round (so a refreshed phone shows "Answer sent"). */
@@ -122,6 +124,7 @@ export type HostActivity = {
   status: ActivityStatus;
   round: number;
   position: number;
+  closesAt: string | null;
   /** One entry per round played so far (round 1 … current). */
   stats: RoundStats[];
 };
@@ -141,15 +144,37 @@ export type HostState = {
   liveActivityId: string | null;
   /** The activity "on stage" for phones/projector (LIVE, or just closed/revealed), or null. */
   stageActivityId: string | null;
+  /** Topic currently shown on the projector (so the host can see / stop it), or null. */
+  projectedTopicId: string | null;
+  serverTime: string;
 };
+
+/** A Q&A topic as shown on the projector: anonymous questions, counts, reply. */
+export type ProjectedTopic = {
+  id: string;
+  title: string;
+  status: TopicStatus;
+  reply: string | null;
+  meTooCount: number;
+  questions: string[];
+};
+/** What the projector shows over the stage activity; topics come resolved. */
+export type ProjectedView =
+  | { kind: 'welcome' }
+  | { kind: 'blank' }
+  | { kind: 'wrap' }
+  | { kind: 'topic'; id: string; topic: ProjectedTopic };
 
 export type PresentState = {
   version: number;
+  /** For countdowns: clients compute their offset from this, not from their own clock. */
+  serverTime: string;
   session: { code: string; topic: string; status: SessionStatus; joinedCount: number };
   activities: PresentActivity[];
   liveActivityId: string | null;
   stageActivityId: string | null;
-  projected: null; // Phase 5
+  projected: ProjectedView | null;
+  settings: { timerSec: 0 | 30 | 60 | 90; autoReveal: boolean };
 };
 
 export type StudentState = {

@@ -43,8 +43,8 @@ export function InviteCard({
           variant="outline"
           size="icon"
           onClick={() => openPresentWindow(code)}
-          aria-label="Show on projector"
-          title="Show on projector"
+          aria-label="Open projector view"
+          title="Open projector view"
         >
           <MonitorUp className="size-5" />
         </Button>

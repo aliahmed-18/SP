@@ -1,5 +1,15 @@
 import { useState, type FormEvent } from 'react';
-import { Check, MessageSquareText, MoreHorizontal, Pencil, RotateCcw, Trash2, Users } from 'lucide-react';
+import {
+  Check,
+  MessageSquareText,
+  MonitorUp,
+  MonitorX,
+  MoreHorizontal,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { LIMITS, type HostQuestion, type HostTopic } from '@getit/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +21,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
+import { emitAck } from '@/lib/emit';
 import { cn } from '@/lib/utils';
+import { useHost } from '../host-context';
 import { qaApi } from '../qa-api';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RenameTopicDialog } from './RenameTopicDialog';
@@ -32,6 +44,8 @@ export function TopicCard({
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const addressed = topic.status !== 'OPEN';
+  const { getSocket, projectedTopicId } = useHost();
+  const onProjector = projectedTopicId === topic.id;
 
   return (
     <article
@@ -108,6 +122,18 @@ export function TopicCard({
         <ReplyForm topic={topic} onClose={() => setReplying(false)} />
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={onProjector ? 'secondary' : 'default'}
+            aria-pressed={onProjector}
+            onClick={() =>
+              void emitAck(getSocket(), 'present:project', {
+                item: onProjector ? null : { kind: 'topic', id: topic.id },
+              })
+            }
+          >
+            {onProjector ? <MonitorX /> : <MonitorUp />} {onProjector ? 'Stop showing' : 'Show on projector'}
+          </Button>
           {topic.status !== 'ANSWERED_IN_CLASS' && (
             <Button
               variant="outline"

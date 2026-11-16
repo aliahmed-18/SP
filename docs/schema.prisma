@@ -1,5 +1,8 @@
-// Getit — Prisma schema (starting point). Copy to server/prisma/schema.prisma.
-// Validated with `prisma validate`. Refine only if needed, and explain why.
+// Getit — Prisma schema. Source: docs/schema.prisma (validated with Prisma 6.19).
+// Refinements agreed in Phase 0 (marked "Phase 0" below):
+//   - Session.presentActivityId + Session.projected: the projector returns to the same screen after a refresh.
+//   - Activity.closesAt: the question timer lives on the server, so it survives a projector refresh.
+// Partial unique indexes Prisma can't express live in the first migration's raw SQL.
 
 generator client {
   provider = "prisma-client-js"
@@ -84,6 +87,8 @@ model Session {
   liveActivityId   String?       @unique // the ONE live activity (null = none)
   flaggedCount     Int           @default(0)
   version          Int           @default(0) // bump on every change; clients compare to detect stale state
+  presentActivityId String? // Phase 0: activity the projector is showing (stays set after CLOSED/REVEALED)
+  projected        Json? // Phase 0: ProjectedItem on the projector ({ kind: welcome|blank|topic|misconception, id? }) or null
   startedAt        DateTime      @default(now())
   endedAt          DateTime?
   participants     Participant[]
@@ -179,6 +184,7 @@ model Activity {
   modelAnswer String? // EXPLAIN only; never sent to students
   status      ActivityStatus  @default(DRAFT)
   round       Int             @default(1)
+  closesAt    DateTime? // Phase 0: server-side timer; the activity auto-closes at this time (null = no timer)
   position    Int // run order in the activities list
   createdAt   DateTime        @default(now())
   responses   Response[]

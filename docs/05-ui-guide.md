@@ -55,5 +55,8 @@ Correct = **blue**, wrong = **orange** (colour-blind safe; not green/red). Alway
 - Take-away: "Today's key points" · "What the class asked most" · "Your Quick Check review" · "Nothing to revisit — well done." · "This page disappears 24 hours after the lecture ends."
 More strings: `reference/mvp-code/i18n.tsx` (English object `en`) — reuse wording from there.
 
+## Naming
+The Explain activity is labelled **Explain** in the UI (subtitle "Short written answer"), not "Open-ended question".
+
 ## States every screen needs
 Loading (brand Spinner) · Empty (friendly line + next action, e.g. "No questions yet — show the join code so the class can join.") · Error with Retry · Reconnecting banner · Session ended.

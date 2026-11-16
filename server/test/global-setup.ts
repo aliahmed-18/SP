@@ -1,0 +1,11 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+/** Bring the test database to the latest migration before any test runs. */
+export default function setup() {
+  const script = fileURLToPath(new URL('../scripts/prisma.mjs', import.meta.url));
+  execFileSync(process.execPath, [script, 'migrate', 'deploy'], {
+    stdio: 'pipe',
+    env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
+  });
+}

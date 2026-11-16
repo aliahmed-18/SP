@@ -22,7 +22,7 @@ Put all event names and payload types in `shared/src/events.ts` and use typed So
 
 ## Snapshots
 ```ts
-StudentState = { version, session: { topic, status },
+StudentState = { version, session: { id, topic, status },   // id = session uuid, used to key local history
   liveActivity: StudentActivity | null,
   myResponse: { round, answer, confident } | null,     // so a refreshed phone shows "Answer sent"
   myQuestions: { text, createdAt }[],

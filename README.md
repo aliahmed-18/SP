@@ -1,28 +1,70 @@
-# Getit — Starter Kit for Claude Code
+# Getit — Make sure your students get it.
 
-## ابدأ من هني (خطوات)
-1. **جهّز جهازك:** Node.js 22، و Docker Desktop (عشان PostgreSQL)، و Git، و Claude Code.
-2. **سوّ repo جديد** في GitHub (مثلاً `getit`)، واعمل clone على جهازك.
-3. **فك الـ zip** وانسخ كل محتوياته في root الـ repo: `CLAUDE.md` و `FIRST_PROMPT.md` و `docs/` و `brand/` و `reference/`. سوّ commit.
-4. افتح Terminal في الـ repo واكتب `claude`.
-5. **انسخ الـ prompt** من `FIRST_PROMPT.md` (اللي تحت الخط) والصقه.
-6. راجع رد Phase 0، وبعدها قل له "go". بعد كل phase جرّب بنفسك قبل ما تقول له يكمل.
-7. بعد ما تخلص Phase 1، كل واحد في الفريق يسوي clone ويشتغل على track حقه (`docs/06-plan-and-team.md`).
+A classroom interaction website for university lectures: anonymous Q&A with topics and "Me too",
+Quick Checks, Explain, a projector mode and an end-of-lecture Take-away.
 
-## What's inside
-| Path | What |
+Stack: React 19 + Vite + Tailwind v4 + shadcn/ui · Express 5 + Socket.io · PostgreSQL 16 + Prisma 6 · TypeScript (strict) everywhere.
+Read **`CLAUDE.md`** and **`docs/`** before contributing.
+
+## Setup (fresh clone → running app)
+
+You need **Node.js 22.12+**, **Docker Desktop** and Git.
+
+```bash
+cp .env.example .env
+```
+
+```bash
+docker compose up -d
+```
+
+```bash
+npm install
+```
+
+```bash
+npm run db:migrate
+```
+
+```bash
+npm run dev
+```
+
+Open http://localhost:5173. The home page shows the Getit logo and a **"Socket connected · DB ok"** pill.
+
+- `npm run db:migrate` creates the tables in the `getit` database. Docker also creates a `getit_test` database for the tests.
+- `npm run db:seed` adds the demo data (demo instructor `demo@getit.app` / `getit-demo-2026`, from Phase 2).
+- No Docker? Any local PostgreSQL 16 works. Create a `getit` user (password `getit`) that owns the databases `getit` and `getit_test`.
+- Already ran Docker before `server/prisma/init-test-db.sql` existed? Run `docker compose exec db createdb -U getit getit_test` once.
+
+## Commands
+
+| Command | What it does |
 |---|---|
-| `CLAUDE.md` | Main context file — Claude Code reads it automatically every session |
-| `FIRST_PROMPT.md` | First message to paste into Claude Code |
-| `docs/01-product-spec.md` | Every feature, screen, rule and limit |
-| `docs/02-data-model.md` + `docs/schema.prisma` | Database (Prisma 6, validated) |
-| `docs/03-api.md` | REST endpoints |
-| `docs/04-realtime-events.md` | Socket.io events, rooms, snapshots, privacy DTOs |
-| `docs/05-ui-guide.md` | Colours, font, layouts, exact copy |
-| `docs/06-plan-and-team.md` | Phases, calendar, 4-person split |
-| `docs/07-demo-script.md` | Presentation flow + likely professor questions |
-| `docs/08-deployment.md` | Env vars, local setup, hosting |
-| `docs/09-definition-of-done.md` | Tests and checklists |
-| `brand/` | Logo SVGs, icons, PWA manifest, og-image, theme.css, brand.tsx, logo PNGs for slides |
-| `reference/screenshots/` | 19 screens of the old MVP (desktop, projector, phone) |
-| `reference/mvp-code/` | Moderation filter + logic to port, old SQL for reading only |
+| `npm run dev` | Server on :4000 (tsx watch) + client on :5173 (Vite, proxies `/api` and `/socket.io`) |
+| `npm run dev:host -w client` | Same client, reachable from phones on your Wi-Fi at `http://<laptop-ip>:5173` (run the server with `npm run dev -w server`) |
+| `npm run typecheck` | `tsc` on shared, server and client |
+| `npm run lint` | ESLint (flat config, typescript-eslint) |
+| `npm test` | Vitest: shared unit tests + server integration tests against `TEST_DATABASE_URL` |
+| `npm run e2e` | Playwright (starts `npm run dev` if it isn't running). Run `npx playwright install chromium` once first |
+| `npm run build` then `npm start` | Production: one Node service on :4000 serves the API, Socket.io and the built client |
+| `npm run db:migrate` / `db:deploy` / `db:seed` / `db:reset` | Prisma (loads the root `.env`) |
+| `npm run format` | Prettier |
+
+Before saying a change is done: run `npm run typecheck && npm run lint && npm test`, then start the app and check it.
+
+## Layout
+
+```
+shared/   zod schemas, socket event types, pure rules (+ Vitest)
+server/   Express + Socket.io + Prisma  (prisma/ = schema, migrations, seed)
+client/   React app (features/, components/ui = shadcn, components/brand = logo)
+e2e/      Playwright
+docs/     spec, data model, API, realtime contract, UI guide, plan, demo script, deployment, DoD
+brand/    logo vectors, icons, theme tokens (source of truth, copied into client/)
+reference/ old MVP screenshots + logic to port (read-only)
+```
+
+## Workflow
+
+Branch `feat/<track>` → PR into `main` → one teammate reviews → CI (typecheck, lint, tests, build) must be green. Keep `main` runnable.

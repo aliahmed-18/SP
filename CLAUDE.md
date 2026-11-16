@@ -35,7 +35,7 @@ There is an earlier MVP (built with Lovable + Supabase). We are **rebuilding fro
 getit/
 ├─ CLAUDE.md  docs/  brand/  reference/        ← this starter kit (keep)
 ├─ docker-compose.yml  .env.example  package.json (workspaces)
-├─ shared/src/        types.ts, schemas.ts (zod), events.ts (socket event names + payload types), rules.ts (pure logic)
+├─ shared/src/        types.ts, schemas.ts (zod), events.ts (socket event names + payload types), rules.ts (pure logic), codes.ts, moderation.ts (ported, used by server + client)
 ├─ server/src/
 │   ├─ index.ts           app + http server + socket.io
 │   ├─ env.ts             zod-validated env
@@ -44,8 +44,8 @@ getit/
 │   ├─ routes/            courses.ts, sessions.ts, activities.ts, questions.ts, takeaway.ts, export.ts
 │   ├─ realtime/          socket.ts (auth + rooms), broadcast.ts (DTO builders + emit helpers)
 │   ├─ services/          business logic per feature (no Express/Socket types inside)
-│   ├─ lib/               moderation.ts (ported), codes.ts, deviceHash.ts, rateLimit.ts
-│   └─ prisma/schema.prisma, seed.ts
+│   ├─ lib/               deviceHash.ts, rateLimit.ts, errors.ts
+│   └─ (server/prisma/: schema.prisma, migrations/, seed.ts — next to src/, Prisma's default)
 └─ client/src/
     ├─ main.tsx, router.tsx, styles.css (= brand/theme.css)
     ├─ components/ui/     shadcn components
@@ -60,7 +60,7 @@ getit/
 2. **Anonymity is real.** Students are identified only by a random `deviceId` (UUID in localStorage). The server stores only `deviceHash = sha256(deviceId + DEVICE_SALT)`. No device hash, IP, or per-student identity ever reaches the instructor, the projector, or other students.
 3. **No answer leaks.** A Quick Check's correct answer and explanation are sent to students **only after REVEALED**. Build student payloads with explicit allow-list DTO functions (`toStudentActivity()` etc.), never by spreading DB rows.
 4. **One live activity per session at a time. One answer per device per round.** Enforce with DB unique constraints + transactions, not only UI.
-5. **Stealth moderation.** Blocked questions get the *same* success response as normal ones. Blocked text is never stored; only a `flaggedCount` goes up. Use the ported `moderation.ts`.
+5. **Stealth moderation.** Blocked questions get the *same* success response as normal ones. Blocked text is never stored; only a `flaggedCount` goes up. Use the ported `shared/src/moderation.ts`.
 6. **Rate limits on questions:** min 5 s between questions per device, max 40 questions per device per session. Rejections also look like success.
 7. **Reconnect-safe.** Every client, on (re)connect or tab focus, asks for a full **state snapshot**; events after that are applied on top. A refreshed phone returns to exactly where it was (same answers, same confirmation screens).
 8. **Every server write that changes what someone sees must emit an event** (see `docs/04-realtime-events.md`).
@@ -84,14 +84,15 @@ getit/
 - After any change: run `npm run typecheck`, `npm test`, and start the app to verify. Do not say "done" without verifying.
 - Look at `reference/screenshots/` before building any screen. Match the layout and feel; it does not need to be pixel-perfect.
 
-## 7. Commands (to be created in Phase 1)
+## 7. Commands
 ```
-docker compose up -d          # Postgres
+cp .env.example .env          # once
+docker compose up -d          # Postgres (creates getit + getit_test)
 npm install
 npm run db:migrate            # prisma migrate dev
 npm run db:seed               # demo instructor + course + sample activities
 npm run dev                   # client :5173 + server :4000 together
-npm run typecheck && npm test
+npm run typecheck && npm run lint && npm test   # tests use TEST_DATABASE_URL
 npm run e2e                   # Playwright demo flow
 ```
 Demo login after seed: `demo@getit.app` / `getit-demo-2026`.

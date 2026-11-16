@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: getit
+      POSTGRES_PASSWORD: getit
+      POSTGRES_DB: getit
+    ports:
+      - '5432:5432'
+    volumes:
+      - getit-db:/var/lib/postgresql/data
+      - ./server/prisma/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U getit -d getit']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  getit-db:

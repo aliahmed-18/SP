@@ -2,11 +2,13 @@ import { createServer } from 'node:http';
 import { createApp } from './app';
 import { prisma } from './db';
 import { env } from './env';
+import { startExpirySweep } from './realtime/expiry';
 import { createSocketServer } from './realtime/socket';
 
 const app = createApp();
 const httpServer = createServer(app);
 const io = createSocketServer(httpServer);
+const stopSweep = startExpirySweep();
 
 httpServer.listen(env.PORT, () => {
   console.log(`[getit] server listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
@@ -14,6 +16,7 @@ httpServer.listen(env.PORT, () => {
 
 async function shutdown(signal: string) {
   console.log(`[getit] ${signal} received, shutting down`);
+  stopSweep();
   await io.close();
   await prisma.$disconnect();
   process.exit(0);

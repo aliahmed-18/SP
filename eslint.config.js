@@ -37,4 +37,8 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  {
+    files: ['client/src/router.tsx', 'client/src/main.tsx'], // route table, not a component module
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
 );

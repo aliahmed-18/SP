@@ -5,7 +5,11 @@ import express from 'express';
 import helmet from 'helmet';
 import { isProd } from './env';
 import { errorHandler, notFoundApi } from './lib/errors';
+import { authRouter } from './auth/routes';
+import { coursesRouter } from './routes/courses';
 import { healthRouter } from './routes/health';
+import { publicRouter } from './routes/public';
+import { sessionsRouter } from './routes/sessions';
 
 const clientDist = fileURLToPath(new URL('../../client/dist', import.meta.url));
 
@@ -25,6 +29,10 @@ export function createApp() {
 
   const api = express.Router();
   api.use(healthRouter);
+  api.use(authRouter);
+  api.use(coursesRouter);
+  api.use(sessionsRouter);
+  api.use(publicRouter);
   api.use(notFoundApi);
   app.use('/api', api);
 

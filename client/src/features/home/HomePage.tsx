@@ -5,7 +5,6 @@ import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { JoinCard } from './JoinCard';
 import { LivePreviewCard } from './LivePreviewCard';
-import { SystemStatusPill } from './SystemStatusPill';
 
 const HERO_WORDS = ['Assess', 'Interact', 'Be efficient'];
 const HOW_IT_WORKS = [
@@ -112,10 +111,6 @@ export function HomePage() {
               </Button>
             </div>
           </section>
-
-          <div className="flex justify-center">
-            <SystemStatusPill />
-          </div>
         </div>
       </main>
     </div>

@@ -1,24 +1,30 @@
 import { useState, type FormEvent } from 'react';
 import { LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { CODE_LENGTH, isValidJoinCode, normalizeJoinCode } from '@getit/shared';
+import { CODE_LENGTH, INVALID_CODE_MESSAGE, isValidJoinCode, normalizeJoinCode } from '@getit/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export function JoinCard() {
+export function JoinCard({
+  initialCode = '',
+  initialError = null,
+}: {
+  initialCode?: string;
+  initialError?: string | null;
+}) {
   const navigate = useNavigate();
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState(initialCode);
+  const [error, setError] = useState<string | null>(initialError);
   const valid = isValidJoinCode(code);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!valid) {
-      setError("That session doesn't exist or has expired.");
+      setError(INVALID_CODE_MESSAGE);
       return;
     }
-    navigate(`/join/${code}`);
+    navigate(`/join/${code}`, { replace: initialError !== null });
   }
 
   return (
@@ -47,7 +53,6 @@ export function JoinCard() {
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          maxLength={CODE_LENGTH + 2}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? 'join-error' : undefined}
           className="h-16 text-center font-semibold tracking-[0.5em] uppercase md:text-3xl text-3xl"

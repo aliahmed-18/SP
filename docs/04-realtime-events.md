@@ -9,7 +9,8 @@ Put all event names and payload types in `shared/src/events.ts` and use typed So
 | Instructor host view | `{ role: "host", code, token }` (token from `/auth/socket-token`, must own the session) | `s:{sessionId}:host` |
 | Projector | `{ role: "present", code, token }` | `s:{sessionId}:present` |
 
-- Reject the connection if the session doesn't exist, has expired, or the token doesn't own it.
+- Reject the connection if the session doesn't exist, has expired, or the token doesn't own it. The refusal reason is `connect_error.message`: `INVALID_AUTH` (malformed handshake), `SESSION_NOT_FOUND` (student: no such code / past the 24 h window), `FORBIDDEN` (host/projector: bad or expired token, or not the owner). Clients show an error screen for these and do not retry; any other error retries.
+- A student socket on a LIVE session also registers the device as a Participant (idempotent), so a phone that opens `/s/:code` directly is counted once.
 - On **every connect / reconnect**, the server immediately emits a full snapshot (`state:student` / `state:host` / `state:present`). Clients **replace** their state with it.
 - Also: client re-requests the snapshot (`state:request`) when the tab becomes visible again or the browser goes back online.
 - Every snapshot and event includes `version` (session.version). If a client receives an event with `version > local + 1`, it requests a fresh snapshot.

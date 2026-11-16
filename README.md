@@ -27,13 +27,18 @@ npm run db:migrate
 ```
 
 ```bash
+npm run db:seed
+```
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:5173. The home page shows the Getit logo and a **"Socket connected · DB ok"** pill.
+Open http://localhost:5173 and log in with **`demo@getit.app` / `getit-demo-2026`** (or create an account).
+Start a session, then join from a phone or a second browser window with the code.
 
 - `npm run db:migrate` creates the tables in the `getit` database. Docker also creates a `getit_test` database for the tests.
-- `npm run db:seed` adds the demo data (demo instructor `demo@getit.app` / `getit-demo-2026`, from Phase 2).
+- `npm run db:seed` adds the demo data: instructor, course "ITCS 444 — Mobile Development" and one ended lecture with questions, topics, results and a Take-away. Safe to run again.
 - No Docker? Any local PostgreSQL 16 works. Create a `getit` user (password `getit`) that owns the databases `getit` and `getit_test`.
 - Already ran Docker before `server/prisma/init-test-db.sql` existed? Run `docker compose exec db createdb -U getit getit_test` once.
 
@@ -46,8 +51,8 @@ Open http://localhost:5173. The home page shows the Getit logo and a **"Socket c
 | `npm run typecheck` | `tsc` on shared, server and client |
 | `npm run lint` | ESLint (flat config, typescript-eslint) |
 | `npm test` | Vitest: shared unit tests + server integration tests against `TEST_DATABASE_URL` |
-| `npm run e2e` | Playwright (starts `npm run dev` if it isn't running). Run `npx playwright install chromium` once first |
-| `npm run build` then `npm start` | Production: one Node service on :4000 serves the API, Socket.io and the built client |
+| `npm run e2e` | Playwright (starts `npm run dev` if it isn't running; needs `db:seed`). Run `npx playwright install chromium` once first. `E2E_BASE_URL=http://localhost:4000 npm run e2e` tests a running production build |
+| `npm run build` then `npm start` | Production: one Node service on :4000 serves the API, Socket.io and the built client. The login cookie is `Secure` in production, so use `localhost` or HTTPS |
 | `npm run db:migrate` / `db:deploy` / `db:seed` / `db:reset` | Prisma (loads the root `.env`) |
 | `npm run format` | Prettier |
 

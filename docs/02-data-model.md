@@ -51,4 +51,5 @@ CREATE UNIQUE INDEX activity_one_live_per_session ON "Activity"("sessionId") WHE
 - Instructor `demo@getit.app` / `getit-demo-2026` (name "Dr. Demo").
 - Course "ITCS 444 — Mobile Development".
 - One ENDED session with realistic questions, topics, Quick Check results and a published Take-away (so the dashboard summary looks real in the demo).
-- Activity templates ready to copy into a new live session: 3 Quick Checks (one MCQ, one True/False, one Numeric) + 1 Explain about the demo lecture topic.
+- Activity templates ready to copy into a new live session: 3 Quick Checks (one MCQ, one True/False, one Numeric) + 1 Explain about the demo lecture topic. *(Implemented as the 4 activities of the seeded ended session — no extra table; Phase 4 adds "copy activities from an earlier session".)*
+- The seed is idempotent: it upserts the demo instructor and recreates only its own records (fixed ids, code `DEMO2`), never sessions created during rehearsals.

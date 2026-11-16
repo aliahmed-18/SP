@@ -10,7 +10,7 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 | Method | Path | Body | Notes |
 |---|---|---|---|
 | POST | `/auth/register` | `{ name, email, password }` | password ≥ 8, bcrypt cost 10, sets cookie |
-| POST | `/auth/login` | `{ email, password }` | sets cookie; same error for wrong email or password |
+| POST | `/auth/login` | `{ email, password }` | sets cookie; same error for wrong email or password; 429 after 20 tries / 10 min per IP+email |
 | POST | `/auth/logout` | – | clears cookie |
 | GET | `/auth/me` | – | `{ id, name, email }` |
 | GET | `/auth/socket-token` | – | short-lived JWT (15 min) for the Socket.io handshake |
@@ -23,6 +23,7 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 
 ## Sessions (instructor)
 | GET | `/courses/:id/sessions` | list: id, code, topic, status, startedAt, joined, questions |
+| GET | `/sessions?courseId=<id\|none>` | same list for all my sessions (dashboard); `none` = sessions whose course was deleted |
 | POST | `/sessions` | `{ courseId?, topic, academicMode }` → `{ id, code }` (generate code, retry on collision) |
 | GET | `/sessions/:code/host` | full **instructor snapshot** (see events doc `HostState`) |
 | POST | `/sessions/:code/end` | ends session, creates Takeaway draft |
@@ -56,6 +57,8 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 | GET | `/public/sessions/:code/takeaway` | published Take-away (404 until published / after 24 h) |
 
 Student live actions (ask, answer, me-too, confidence, explain) go through Socket.io with acks.
+
+Code lookup (codes are reused after a session ends): students get the LIVE session with that code, else the newest ENDED one that ended < 24 h ago; instructors get their own session with that code, LIVE first, else the most recent.
 
 ## Health
 | GET | `/health` | `{ ok: true, db: true }` — used by the hosting platform and before the demo |

@@ -25,11 +25,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ['server/**/*.{ts,mjs}', 'shared/**/*.ts', 'e2e/**/*.ts', '*.{js,ts}'],
+    files: ['server/**/*.{ts,mjs}', 'shared/**/*.ts', 'e2e/**/*.ts', 'scripts/**/*.mjs', '*.{js,ts}'],
     languageOptions: { globals: globals.node },
   },
   {
-    files: ['client/**/*.{ts,tsx}'],
+    files: ['client/**/*.{ts,tsx}', 'client/public/**/*.js'],
     languageOptions: { globals: globals.browser },
     plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
     rules: {

@@ -74,7 +74,8 @@ export function TakeawayView({ code, sessionId, rev }: { code: string; sessionId
     <div className="flex flex-col gap-4" data-testid="takeaway">
       <div ref={sheet} className="takeaway-light flex flex-col gap-6 rounded-2xl border bg-background p-5">
         <header className="flex items-center gap-3">
-          <Wordmark className="h-8 w-auto" />
+          {/* The card is always light "paper", so the letters stay teal even in dark mode. */}
+          <Wordmark className="h-8 w-auto !text-[#0F766E]" />
           <span className="border-l pl-3 font-semibold text-primary">Take-away</span>
         </header>
         <h1 className="text-3xl leading-tight font-bold" dir="auto">

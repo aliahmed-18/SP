@@ -1,0 +1,33 @@
+# Render Blueprint (docs/08): one always-on Node service (API + Socket.io + built client) + Postgres 16.
+# Nothing is created until you open this repo in Render → "New → Blueprint" and confirm.
+# Pick paid / always-on plans for the demo: free web services sleep when idle (cold start ~1 min).
+services:
+  - type: web
+    name: getit
+    runtime: node
+    plan: starter
+    region: frankfurt # closest Render region to Bahrain; change if needed
+    buildCommand: npm ci --include=dev && npm run build && npm run db:deploy
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: getit-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DEVICE_SALT
+        generateValue: true
+      - key: CLIENT_ORIGIN
+        sync: false # set to the service URL, e.g. https://getit.onrender.com
+
+databases:
+  - name: getit-db
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"

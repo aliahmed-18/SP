@@ -1,24 +1,18 @@
 import { z } from 'zod';
 import { CODE_REGEX, normalizeJoinCode } from './codes';
+import {
+  ACTIVITY_LIMITS,
+  EXPLAIN_MAX,
+  EXPLAIN_TAGS,
+  INVALID_CODE_MESSAGE,
+  LIMITS,
+  TAKEAWAY_LIMITS,
+} from './constants';
+
+// Plain constants live in constants.ts (no zod), so phones don't download zod just to read a limit.
+export * from './constants';
 
 // Zod schemas shared by client and server (CLAUDE.md §4.1: the server validates every input with these).
-
-export const LIMITS = {
-  passwordMin: 8,
-  passwordMax: 200,
-  nameMax: 80,
-  emailMax: 254,
-  courseNameMax: 100,
-  lectureTopicMax: 80,
-  questionMax: 300,
-  topicTitleMax: 100,
-  replyMax: 2000,
-  /** Rule 6: min gap between questions per device, max questions per device per session. */
-  questionMinGapMs: 5_000,
-  questionsPerDevice: 40,
-} as const;
-
-export const INVALID_CODE_MESSAGE = "That session doesn't exist or has expired.";
 
 /** Accepts what a person typed (" bc eu3") and returns the canonical code, or fails. */
 export const joinCodeSchema = z
@@ -130,14 +124,6 @@ export type UpdateQuestionInput = z.input<typeof updateQuestionSchema>;
 
 // ─── Quick Check (Phase 4) ──────────────────────────────────────────────────
 
-export const ACTIVITY_LIMITS = {
-  promptMax: 2000,
-  optionMax: 300,
-  optionsMin: 2,
-  optionsMax: 5,
-  explanationMax: 2000,
-} as const;
-
 const prompt = z
   .string()
   .trim()
@@ -218,15 +204,11 @@ export const confidenceSchema = z.object({
 
 // ─── Present mode (Phase 5) ─────────────────────────────────────────────────
 
-export const TIMER_CHOICES = [0, 30, 60, 90] as const;
-export const ADD_TIME_SECONDS = 15;
-
 export const presentSettingsSchema = z.object({
   timerSec: z.union([z.literal(0), z.literal(30), z.literal(60), z.literal(90)]),
   autoReveal: z.boolean(),
 });
 export type PresentSettings = z.infer<typeof presentSettingsSchema>;
-export const DEFAULT_PRESENT_SETTINGS: PresentSettings = { timerSec: 0, autoReveal: true };
 
 /** What the projector shows instead of the stage activity (null = the activity / welcome). */
 export const projectSchema = z.discriminatedUnion('kind', [
@@ -246,9 +228,6 @@ export const launchSchema = activityIdSchema.extend({
 });
 
 // ─── Explain + Take-away (Phase 6) ──────────────────────────────────────────
-
-export const EXPLAIN_MAX = 200;
-export const TAKEAWAY_LIMITS = { keyPoints: 10, keyPointMax: 300 } as const;
 
 /** Explain draft: a prompt + an optional model answer (never sent to students or the projector). */
 export const explainDraftSchema = z.object({
@@ -273,7 +252,6 @@ export const explainTextFixSchema = z.object({
 
 export const explainSubmitSchema = z.object({ activityId: z.string().uuid(), text: z.string().max(2000) });
 
-export const EXPLAIN_TAGS = ['CORRECT', 'PARTIAL', 'MISCONCEPTION'] as const;
 export const tagSchema = z.object({ tag: z.enum(EXPLAIN_TAGS).nullable() });
 
 export const takeawaySaveSchema = z.object({

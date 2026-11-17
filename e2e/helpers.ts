@@ -1,4 +1,4 @@
-import { devices, expect, type Browser, type Page } from '@playwright/test';
+import { devices, expect, test, type Browser, type Page } from '@playwright/test';
 
 export async function phone(browser: Browser, opts: { dark?: boolean } = {}) {
   const ctx = await browser.newContext({ ...devices['Pixel 7'] });
@@ -17,9 +17,24 @@ export async function registerInstructor(page: Page) {
   return email;
 }
 
-/** Registers, starts a session from the dashboard, returns the join code (host page open). */
+/**
+ * One fixed instructor per Playwright worker: registered once, logged in afterwards. Registration is
+ * rate-limited per IP (50/h), and repeated test runs must never hit it; successful logins don't count.
+ */
+export async function loginTestInstructor(page: Page) {
+  const email = `e2e-worker-${test.info().workerIndex}@example.com`;
+  const creds = { name: 'Dr. E2E', email, password: 'password123' };
+  let res = await page.request.post('/api/auth/register', { data: creds });
+  if (res.status() === 409)
+    res = await page.request.post('/api/auth/login', { data: { email, password: creds.password } });
+  expect(res.ok(), `login failed: ${res.status()}`).toBe(true);
+  await page.goto('/dashboard');
+  await expect(page.getByRole('heading', { name: 'Your lectures' })).toBeVisible();
+}
+
+/** Logs in, starts a session from the dashboard, returns the join code (host page open). */
 export async function startSession(page: Page, topic = 'Linear regression and correlation') {
-  await registerInstructor(page);
+  await loginTestInstructor(page);
   await page.getByRole('button', { name: 'Start session' }).first().click();
   await page.getByLabel('Lecture topic').fill(topic);
   await page.getByRole('dialog').getByRole('button', { name: 'Start session' }).click();

@@ -22,8 +22,22 @@ export function createApp() {
   app.disable('x-powered-by');
   app.use(
     helmet({
-      // The SPA uses inline SVG + data: QR images; tighten in Phase 7 once all screens exist.
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"], // no inline scripts anywhere (theme-init.js is a file)
+          styleSrc: ["'self'", "'unsafe-inline'"], // React style={} attributes + toast styles
+          imgSrc: ["'self'", 'data:', 'blob:'], // QR codes + Take-away image are data: URLs
+          fontSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'", 'ws:', 'wss:'], // Socket.io (same host)
+          manifestSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+        },
+      },
       crossOriginEmbedderPolicy: false,
     }),
   );

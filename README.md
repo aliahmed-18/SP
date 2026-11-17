@@ -55,6 +55,8 @@ Start a session, then join from a phone or a second browser window with the code
 | `npm run build` then `npm start` | Production: one Node service on :4000 serves the API, Socket.io and the built client. The login cookie is `Secure` in production, so use `localhost` or HTTPS |
 | `npm run db:migrate` / `db:deploy` / `db:seed` / `db:reset` | Prisma (loads the root `.env`) |
 | `npm run format` | Prettier |
+| `npm run smoke -- <url>` | Pre-demo check of a running deployment (HTTPS, health, CSP, deep link, WebSocket) |
+| `npm run load-test -- <url> 60` | 60 simulated phones join/answer/ask at once; latencies + exact totals |
 
 Before saying a change is done: run `npm run typecheck && npm run lint && npm test`, then start the app and check it.
 
@@ -69,6 +71,10 @@ docs/     spec, data model, API, realtime contract, UI guide, plan, demo script,
 brand/    logo vectors, icons, theme tokens (source of truth, copied into client/)
 reference/ old MVP screenshots + logic to port (read-only)
 ```
+
+## Deploy
+
+`render.yaml` is a ready Render Blueprint (web service + Postgres 16). Details, alternatives and the pre-demo checklist: `docs/08-deployment.md`.
 
 ## Workflow
 

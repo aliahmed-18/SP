@@ -87,8 +87,8 @@ export type ExplainOutcome = {
   mine: MyResponse;
   created: boolean;
   blocked: boolean;
-  flaggedCount?: number;
-  part?: { id: string; flaggedCount: number };
+  /** Only when blocked: the flag counts + the version from the SAME transaction (for qa:flagged). */
+  flagged?: { version: number; flaggedCount: number; part: { id: string; flaggedCount: number } };
 };
 
 /**
@@ -130,7 +130,7 @@ export async function submitExplain(
     const s = await tx.session.update({
       where: { id: sessionId },
       data: { flaggedCount: { increment: 1 }, version: { increment: 1 } },
-      select: { flaggedCount: true },
+      select: { flaggedCount: true, version: true },
     });
     const part = await tx.part.findFirstOrThrow({ where: { sessionId }, orderBy: { number: 'desc' } });
     const p = await tx.part.update({ where: { id: part.id }, data: { flaggedCount: { increment: 1 } } });
@@ -138,8 +138,11 @@ export async function submitExplain(
       mine: toMine(row),
       created: true,
       blocked: true,
-      flaggedCount: s.flaggedCount,
-      part: { id: p.id, flaggedCount: p.flaggedCount },
+      flagged: {
+        version: s.version,
+        flaggedCount: s.flaggedCount,
+        part: { id: p.id, flaggedCount: p.flaggedCount },
+      },
     };
   });
 }

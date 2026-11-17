@@ -5,8 +5,8 @@ import {
   explainSubmitSchema,
   meTooSchema,
 } from '@getit/shared';
-import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
+import { FixedWindowLimiter } from '../lib/rateLimit';
 import { askQuestion } from '../services/questions';
 import { setMeToo } from '../services/topics';
 import { emitToHost, emitTopicCounts, safeEmit, scheduleStats } from './broadcast';
@@ -35,9 +35,13 @@ export function registerStudentHandlers(socket: IoSocket) {
     }),
   );
 
+  // Me too fans out to the whole class: cap each phone at a human pace (questions have their own limits).
+  const meTooLimiter = new FixedWindowLimiter(10, 10_000);
   socket.on(
     'topic:metoo',
     handle(async (payload: unknown) => {
+      if (!meTooLimiter.hit(socket.id))
+        throw new HttpError(429, 'RATE_LIMITED', 'Slow down a little and try again.');
       const parsed = meTooSchema.safeParse(payload);
       if (!parsed.success) throw new HttpError(400, 'VALIDATION', 'Invalid request.');
       const r = await setMeToo(sessionId, deviceHash, parsed.data.topicId, parsed.data.on);
@@ -65,17 +69,7 @@ export function registerStudentHandlers(socket: IoSocket) {
       const r = await submitExplain(sessionId, deviceHash, parsed.data);
       // Stealth: stored, blocked and duplicate all ack the same `mine` shape.
       if (r.created) scheduleStats(sessionId, parsed.data.activityId);
-      if (r.blocked && r.flaggedCount !== undefined && r.part) {
-        const s = await prisma.session.findUniqueOrThrow({
-          where: { id: sessionId },
-          select: { version: true },
-        });
-        emitToHost(sessionId, 'qa:flagged', {
-          version: s.version,
-          flaggedCount: r.flaggedCount,
-          part: r.part,
-        });
-      }
+      if (r.flagged) emitToHost(sessionId, 'qa:flagged', r.flagged);
       return r.mine;
     }),
   );

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { codeParamSchema, takeawaySaveSchema } from '@getit/shared';
 import { instructorId, requireInstructor } from '../auth/middleware';
 import { parse } from '../lib/validate';
-import { emitTakeawayPublished } from '../realtime/broadcast';
+import { emitHostSnapshot, emitStudentTopics, emitTakeawayPublished, safeEmit } from '../realtime/broadcast';
 import { getHostSession, getPublicSession } from '../services/sessions';
 import { getPublicTakeaway, getTakeawayDraft, publishTakeaway, saveTakeaway } from '../services/takeaway';
 
@@ -20,6 +20,11 @@ takeawayRouter.put('/sessions/:code/takeaway', requireInstructor, async (req, re
   const s = await getHostSession(instructorId(res), code);
   const { published } = await saveTakeaway(s, input);
   if (published) emitTakeawayPublished(s.id); // edits after publishing reach phones too
+  if (Object.values(input.replies).some(Boolean)) {
+    // Filled-in replies change topics: host Q&A panel and phones' topic lists (rule 8).
+    safeEmit(emitHostSnapshot(s.id));
+    safeEmit(emitStudentTopics(s.id));
+  }
   res.json(await getTakeawayDraft(s));
 });
 

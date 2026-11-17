@@ -40,7 +40,11 @@ export function useHostState(code: string) {
         if (ref.current) setState(apply(ref.current));
       };
 
-      s.on('state:host', setState);
+      // Never let an older snapshot (built before a write it raced with) roll the view back.
+      s.on('state:host', (snap) => {
+        const cur = ref.current;
+        if (!cur || cur.session.id !== snap.session.id || snap.version >= cur.version) setState(snap);
+      });
       s.on('session:joined', ({ joinedCount }) =>
         patch((c) => ({ ...c, session: { ...c.session, joinedCount } })),
       );
@@ -48,7 +52,11 @@ export function useHostState(code: string) {
         patch((c) => ({ ...c, session: { ...c.session, status: 'ENDED', endedAt } })),
       );
       s.on('question:new', ({ version, question }) =>
-        versioned(version, (c) => ({ ...c, questions: [question, ...c.questions] })),
+        versioned(version, (c) => ({
+          ...c,
+          // A snapshot may already contain it (its questions query can run after the commit).
+          questions: [question, ...c.questions.filter((q) => q.id !== question.id)],
+        })),
       );
       s.on('question:updated', ({ version, question }) =>
         versioned(version, (c) => ({

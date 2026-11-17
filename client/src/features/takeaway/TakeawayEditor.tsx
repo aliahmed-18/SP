@@ -18,6 +18,9 @@ export function TakeawayEditor({ code, endedAt }: { code: string; endedAt: strin
   const draft = useQuery({
     queryKey: ['takeaway-draft', code],
     queryFn: () => api<TakeawayDraft>(`/sessions/${code}/takeaway/draft`),
+    // The form holds unsaved edits: never refetch behind the instructor's back (window focus etc.).
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
   });
   if (draft.isPending) {
     return (
@@ -34,7 +37,7 @@ export function TakeawayEditor({ code, endedAt }: { code: string; endedAt: strin
       </div>
     );
   }
-  return <EditorForm key={draft.dataUpdatedAt} code={code} draft={draft.data} endedAt={endedAt} />;
+  return <EditorForm key={draft.data.status} code={code} draft={draft.data} endedAt={endedAt} />;
 }
 
 function EditorForm({

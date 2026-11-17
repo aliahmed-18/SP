@@ -34,6 +34,7 @@ export async function statsFor(a: Activity, db: Prisma.TransactionClient = prism
 
 /** Stats (Quick Check) + count + Explain answers (texts only after closing; blocked ones have none). */
 export async function activityResults(a: Activity): Promise<ActivityResults> {
+  if (a.status === 'DRAFT') return { stats: [], responseCount: 0, explainAnswers: [] }; // nothing to query
   if (a.type === 'QUICK_CHECK') {
     const stats = await statsFor(a);
     return { stats, responseCount: stats[stats.length - 1]?.count ?? 0, explainAnswers: [] };
@@ -43,7 +44,7 @@ export async function activityResults(a: Activity): Promise<ActivityResults> {
     orderBy: { createdAt: 'asc' },
     select: { id: true, text: true, tag: true },
   });
-  const open = a.status === 'LIVE' || a.status === 'DRAFT';
+  const open = a.status === 'LIVE';
   return {
     stats: [],
     responseCount: rows.length,

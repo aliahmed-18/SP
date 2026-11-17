@@ -1,4 +1,4 @@
-import type { Question, Session, Topic } from '@prisma/client';
+import type { Activity, Question, Session, Topic } from '@prisma/client';
 import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
 import { ensureNotExpired } from './sessions';
@@ -19,4 +19,20 @@ export async function ownedTopic(instructorId: string, id: string): Promise<Topi
   const t = await prisma.topic.findUnique({ where: { id }, include: { session: true } });
   if (!t || t.session.instructorId !== instructorId) throw notFound('Topic');
   return { ...t, session: await ensureNotExpired(t.session) };
+}
+
+export async function ownedActivity(
+  instructorId: string,
+  id: string,
+): Promise<Activity & { session: Session }> {
+  const a = await prisma.activity.findUnique({ where: { id }, include: { session: true } });
+  if (!a || a.session.instructorId !== instructorId) throw notFound('Activity');
+  return { ...a, session: await ensureNotExpired(a.session) };
+}
+
+/** A session by id that this instructor owns (export). */
+export async function ownedSession(instructorId: string, id: string): Promise<Session> {
+  const s = await prisma.session.findUnique({ where: { id } });
+  if (!s || s.instructorId !== instructorId) throw notFound('Session');
+  return s;
 }

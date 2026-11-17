@@ -4,8 +4,7 @@ import { codeParamSchema, createSessionSchema, idParamSchema } from '@getit/shar
 import { instructorId, requireInstructor } from '../auth/middleware';
 import { parse } from '../lib/validate';
 import { buildHostState } from '../realtime/broadcast';
-import { prisma } from '../db';
-import { HttpError } from '../lib/errors';
+import { ownedSession } from '../services/qa-access';
 import { buildWorkbook, exportFileName } from '../services/export';
 import { createSession, endHostSession, getHostSession, listSessions } from '../services/sessions';
 
@@ -42,8 +41,7 @@ sessionsRouter.post('/sessions/:code/end', async (req, res) => {
 /** Excel export (spec G), owner only. */
 sessionsRouter.get('/sessions/:id/export.xlsx', async (req, res) => {
   const { id } = parse(idParamSchema, req.params);
-  const s = await prisma.session.findUnique({ where: { id } });
-  if (!s || s.instructorId !== instructorId(res)) throw new HttpError(404, 'NOT_FOUND', 'Session not found.');
+  const s = await ownedSession(instructorId(res), id);
   const wb = await buildWorkbook(s);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${exportFileName(s)}"`);

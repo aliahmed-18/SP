@@ -11,10 +11,9 @@ import {
   tagSchema,
 } from '@getit/shared';
 import { instructorId, requireInstructor } from '../auth/middleware';
-import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
 import { parse } from '../lib/validate';
-import { emitHostSnapshot, emitPresentSnapshot, safeEmit } from '../realtime/broadcast';
+import { emitHostSnapshot, emitPresentSnapshot, emitStudentStage, safeEmit } from '../realtime/broadcast';
 import { NO_RESULTS, toHostActivity } from '../realtime/dto';
 import {
   activityResults,
@@ -26,23 +25,17 @@ import {
   reorderActivities,
 } from '../services/activities';
 import { tagExplainAnswer } from '../services/responses';
-import { ensureNotExpired, getHostSession } from '../services/sessions';
+import { ownedActivity } from '../services/qa-access';
+import { getHostSession } from '../services/sessions';
 
 // Activity set-up (docs/03 §Activities). Lifecycle (launch/close/reveal…) goes through Socket.io.
 export const activitiesRouter = Router();
 activitiesRouter.use('/activities', requireInstructor);
 
-async function ownedActivity(instructor: string, id: string) {
-  const a = await prisma.activity.findUnique({ where: { id }, include: { session: true } });
-  if (!a || a.session.instructorId !== instructor)
-    throw new HttpError(404, 'NOT_FOUND', 'Activity not found.');
-  await ensureNotExpired(a.session);
-  return a;
-}
-
 function structureChanged(sessionId: string) {
   safeEmit(emitHostSnapshot(sessionId));
   safeEmit(emitPresentSnapshot(sessionId));
+  safeEmit(emitStudentStage(sessionId)); // an edited / deleted stage activity must update phones (rule 8)
 }
 
 activitiesRouter.post('/sessions/:code/activities', requireInstructor, async (req, res) => {

@@ -199,6 +199,16 @@ export async function emitPresentSnapshot(sessionId: string) {
   server.to(rooms.present(sessionId)).emit('state:present', await buildPresentState(sessionId));
 }
 
+/** The stage activity changed outside the lifecycle (edited / deleted): phones get its current version. */
+export async function emitStudentStage(sessionId: string) {
+  const server = io;
+  if (!server) return;
+  const stage = await stageActivity(await loadSession(sessionId));
+  server
+    .to(rooms.students(sessionId))
+    .emit('activity:student', { activity: stage ? toStudentActivity(stage) : null });
+}
+
 /** Students' topic list changed (title, status, reply, Me too, membership). */
 export async function emitStudentTopics(sessionId: string) {
   const server = io;

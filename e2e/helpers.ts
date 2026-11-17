@@ -24,9 +24,9 @@ export async function registerInstructor(page: Page) {
 export async function loginTestInstructor(page: Page) {
   const email = `e2e-worker-${test.info().workerIndex}@example.com`;
   const creds = { name: 'Dr. E2E', email, password: 'password123' };
-  let res = await page.request.post('/api/auth/register', { data: creds });
-  if (res.status() === 409)
-    res = await page.request.post('/api/auth/login', { data: { email, password: creds.password } });
+  // Log in first: only the very first run registers (registration is rate-limited per IP).
+  let res = await page.request.post('/api/auth/login', { data: { email, password: creds.password } });
+  if (res.status() === 401) res = await page.request.post('/api/auth/register', { data: creds });
   expect(res.ok(), `login failed: ${res.status()}`).toBe(true);
   await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: 'Your lectures' })).toBeVisible();

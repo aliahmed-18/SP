@@ -5,6 +5,8 @@
 @import "@fontsource-variable/readex-pro/wght.css";
 
 @custom-variant dark (&:is(.dark *));
+/* Projector on a short screen (a laptop rather than a 1080p projector): tighter type and spacing. */
+@custom-variant short (@media (max-height: 960px));
 
 /* Getit — "Calm Classroom" design tokens. All colours are oklch. */
 

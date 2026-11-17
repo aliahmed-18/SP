@@ -1,5 +1,6 @@
 import { EyeOff } from 'lucide-react';
 import type { PresentActivity } from '@getit/shared';
+import { activityKind } from '@/features/session-instructor/activities/kinds';
 
 /** Shot 06: the live question, big; answer count climbs; results stay hidden. */
 export function QuestionScreen({
@@ -21,6 +22,7 @@ export function QuestionScreen({
         ]
       : a.options.map((o, i) => ({ letter: String.fromCharCode(65 + i), label: o }));
   const pct = Math.min(100, (100 * answered) / Math.max(1, joined));
+  const { label: kindLabel, Icon } = activityKind(a);
   return (
     <section
       key={`${a.id}:${a.round}`}
@@ -28,10 +30,16 @@ export function QuestionScreen({
       aria-live="polite"
     >
       <div>
-        <p className="mb-4 text-2xl text-muted-foreground">
+        <p className="mb-4 flex items-center gap-3 text-2xl text-muted-foreground">
           Q{number.index} / {number.total}
+          <span
+            className="grid size-10 place-items-center rounded-lg bg-accent text-primary"
+            title={kindLabel}
+          >
+            <Icon className="size-5" aria-label={kindLabel} />
+          </span>
           {a.round > 1 && (
-            <span className="ml-3 rounded-full bg-accent px-3 py-1 text-xl text-accent-foreground">
+            <span className="rounded-full bg-accent px-3 py-1 text-xl text-accent-foreground">
               Vote again · round {a.round}
             </span>
           )}

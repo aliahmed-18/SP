@@ -126,24 +126,33 @@ test('numeric Quick Check: comma decimals, tolerance, "Not quite" for a wrong an
   await expect(wrong.getByText('Correct answer: 43.04')).toBeVisible();
 });
 
-test('copy the seeded templates into a new session (demo account)', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByLabel('Email').fill('demo@getit.app');
-  await page.getByLabel('Password').fill('getit-demo-2026');
-  await page.getByRole('button', { name: 'Log in' }).click();
+test('copy activities from an earlier session (Quick Check + Explain)', async ({ page }) => {
+  // Self-contained: its own source session, so leftovers in the dev database can't change the result.
+  const source = `Templates ${Date.now()}`;
+  await startSession(page, source);
+  const src = new URL(page.url()).pathname.split('/')[2]!;
+  for (const data of [
+    {
+      type: 'QUICK_CHECK',
+      kind: 'TRUE_FALSE',
+      prompt: 'Correlation proves causation.',
+      correct: false,
+      explanation: 'No.',
+    },
+    { type: 'EXPLAIN', prompt: 'What does b tell you that r does not?', modelAnswer: '' },
+  ]) {
+    expect((await page.request.post(`/api/sessions/${src}/activities`, { data })).status()).toBe(201);
+  }
+  await page.goto('/dashboard');
   await page.getByRole('button', { name: 'Start session' }).first().click();
   await page.getByLabel('Lecture topic').fill('Template copy check');
   await page.getByRole('dialog').getByRole('button', { name: 'Start session' }).click();
   await page.getByRole('button', { name: 'Copy from an earlier session' }).click();
   await page
     .getByRole('dialog')
-    .getByRole('button', { name: /Linear regression and correlation/ })
-    .first()
+    .getByRole('button', { name: new RegExp(source) })
     .click();
-  // The seeded lecture has 3 Quick Checks + 1 Explain; Explain is copied once it exists (Phase 6).
-  await expect(page.getByTestId('activity-row')).toHaveCount(3);
-  // Tidy: end it so the demo dashboard stays clean.
-  await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('menuitem', { name: 'End session' }).click();
-  await page.getByRole('button', { name: 'End session' }).click();
+  const rows = page.getByTestId('activity-row');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(1)).toContainText('Explain');
 });

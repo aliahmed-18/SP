@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CircleStop, Play, Plus } from 'lucide-react';
+import { CircleStop, Download, Play, Plus } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { normalizeJoinCode, type HostState } from '@getit/shared';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { UserMenu } from '@/features/auth/UserMenu';
+import { TakeawayEditor } from '@/features/takeaway/TakeawayEditor';
 import { api, ApiRequestError } from '@/lib/api';
 import { openPresentWindow } from '@/lib/links';
 import { ActivitiesSection } from './activities/ActivitiesSection';
@@ -57,7 +58,13 @@ export function HostPage() {
   }
 
   return (
-    <HostContext.Provider value={{ getSocket, projectedTopicId: state.projectedTopicId }}>
+    <HostContext.Provider
+      value={{
+        getSocket,
+        projectedTopicId: state.projectedTopicId,
+        projectedAnswerId: state.projectedAnswerId,
+      }}
+    >
       <div className="min-h-dvh">
         <ReconnectingBanner status={status} />
         <AppHeader
@@ -86,6 +93,11 @@ export function HostPage() {
                 <strong>Ended.</strong> Students now see that the lecture has ended. This session stays in
                 your dashboard.
               </p>
+              <Button asChild size="sm">
+                <a href={`/api/sessions/${session.id}/export.xlsx`} download>
+                  <Download /> Download results
+                </a>
+              </Button>
               <Button asChild variant="outline" size="sm">
                 <Link to="/dashboard">
                   <Plus /> Start a new session
@@ -101,6 +113,8 @@ export function HostPage() {
               <span className="font-normal text-muted-foreground">Topic: </span>
               {session.topic}
             </h1>
+
+            {ended && <TakeawayEditor code={session.code} endedAt={session.endedAt} />}
 
             {!ended && (
               <InviteCard

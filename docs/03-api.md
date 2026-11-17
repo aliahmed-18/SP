@@ -27,16 +27,16 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 | POST | `/sessions` | `{ courseId?, topic, academicMode }` → `{ id, code }` (generate code, retry on collision) |
 | GET | `/sessions/:code/host` | full **instructor snapshot** (see events doc `HostState`) |
 | POST | `/sessions/:code/end` | ends session, creates Takeaway draft |
-| GET | `/sessions/:id/summary` | ended session summary for dashboard |
-| GET | `/sessions/:id/export.xlsx` | Excel export |
+| GET | `/sessions/:code/host` (ended) | **is** the ended-session summary: the host page of an ended session shows every question, topic, result and the Take-away editor (no separate summary endpoint) |
+| GET | `/sessions/:id/export.xlsx` | Excel export (owner only): sheets Questions, Topics, Quick Checks, Explain. Text is written as text, never formulas; no identities |
 
 ## Activities (instructor)
-| POST | `/sessions/:code/activities` | Quick Check or Explain draft (shared zod `activityDraftSchema`) |
+| POST | `/sessions/:code/activities` | Quick Check or Explain draft (shared zod `activityDraftSchema`); Explain = `{ type: 'EXPLAIN', prompt, modelAnswer? }` |
 | PATCH | `/activities/:id` | DRAFT: full draft (shared `quickCheckDraftSchema`). CLOSED/REVEALED: wording only `{ prompt, explanation, options? }` (same number of options). LIVE: 409 |
 | DELETE | `/activities/:id` | not allowed while LIVE |
 | POST | `/sessions/:code/activities/reorder` | `{ ids: string[] }` (exactly this session's activities, new order) |
 | POST | `/sessions/:code/activities/copy` | `{ fromSessionId }` → copies that (own) session's activities as DRAFTs at the end (seeded templates) |
-| PATCH | `/responses/:id/tag` | Explain tag `{ tag }` |
+| PATCH | `/responses/:id/tag` | Explain tag `{ tag: 'CORRECT' \| 'PARTIAL' \| 'MISCONCEPTION' \| null }` (owner only) |
 
 ## Q&A (instructor)
 | POST | `/sessions/:code/parts` | New part |
@@ -48,9 +48,9 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 | DELETE | `/questions/:id` | remove inappropriate → flaggedCount++ |
 
 ## Take-away (instructor)
-| GET | `/sessions/:code/takeaway/draft` | draft with suggested top topics |
+| GET | `/sessions/:code/takeaway/draft` | draft: key points, chosen topic ids, every topic (most Me too first). Session must be ENDED |
 | PUT | `/sessions/:code/takeaway` | `{ keyPoints[], topTopicIds[], replies: {topicId: text} }` save draft |
-| POST | `/sessions/:code/takeaway/publish` | publish → emit `takeaway:published` |
+| POST | `/sessions/:code/takeaway/publish` | publish (needs ≥ 1 key point) → emit `takeaway:published`. Saving again after publishing updates phones too |
 
 ## Student (no account, header `x-device-id`)
 | GET | `/public/sessions/:code` | `{ topic, status }` or 404 "That session doesn't exist or has expired." |

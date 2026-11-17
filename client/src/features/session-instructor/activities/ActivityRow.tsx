@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '../qa/ConfirmDialog';
 import { activitiesApi, runLifecycle } from './activities-api';
 import { activityKind } from './kinds';
+import { ExplainAnswers } from './ExplainAnswers';
 import { ResultsPanel } from './ResultsPanel';
 
 const STATUS_BADGE = {
@@ -61,7 +62,11 @@ export function ActivityRow({
     run(() => runLifecycle(getSocket(), 'activity:close', { activityId: a.id, reveal }));
 
   const currentRoundCount =
-    live && live.round === a.round ? live.responses : (a.stats[a.stats.length - 1]?.count ?? 0);
+    live && live.round === a.round
+      ? live.responses
+      : isExplain
+        ? a.responseCount
+        : (a.stats[a.stats.length - 1]?.count ?? 0);
   const joinedNow = live?.joined ?? joined;
 
   return (
@@ -98,7 +103,7 @@ export function ActivityRow({
             aria-hidden
           />
         </button>
-        {a.status === 'DRAFT' && !ended && !open && !isExplain && (
+        {a.status === 'DRAFT' && !ended && !open && (
           <Button
             size="sm"
             onClick={() => void life('activity:launch')}
@@ -114,7 +119,7 @@ export function ActivityRow({
         <div className="flex flex-col gap-4 border-t p-4">
           {a.status === 'DRAFT' && isExplain && (
             <p className="text-sm text-muted-foreground">
-              Explain activities can be run once that tool is added.
+              {a.modelAnswer ? `Model answer (only you see it): ${a.modelAnswer}` : 'No model answer.'}
             </p>
           )}
           {a.status === 'DRAFT' && !isExplain && (
@@ -153,17 +158,22 @@ export function ActivityRow({
                 />
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Results stay hidden until you close the question.
+                {isExplain
+                  ? 'You see the answers when you close it.'
+                  : 'Results stay hidden until you close the question.'}
               </p>
             </div>
           )}
 
-          {(a.status === 'CLOSED' || a.status === 'REVEALED') && (
-            <ResultsPanel activity={a} showAnswer={a.status === 'REVEALED'} />
-          )}
+          {(a.status === 'CLOSED' || a.status === 'REVEALED') &&
+            (isExplain ? (
+              <ExplainAnswers activity={a} />
+            ) : (
+              <ResultsPanel activity={a} showAnswer={a.status === 'REVEALED'} />
+            ))}
 
           <div className="flex flex-wrap items-center gap-2">
-            {a.status === 'DRAFT' && !ended && !isExplain && (
+            {a.status === 'DRAFT' && !ended && (
               <Button
                 onClick={() => void life('activity:launch')}
                 disabled={busy || anotherLive}
@@ -172,7 +182,12 @@ export function ActivityRow({
                 <Play /> Launch
               </Button>
             )}
-            {a.status === 'LIVE' && (
+            {a.status === 'LIVE' && isExplain && (
+              <Button onClick={() => void close(false)} disabled={busy}>
+                <Lock /> Close answers
+              </Button>
+            )}
+            {a.status === 'LIVE' && !isExplain && (
               <>
                 <Button onClick={() => void close(true)} disabled={busy}>
                   <Eye /> Close and show answer
@@ -182,7 +197,7 @@ export function ActivityRow({
                 </Button>
               </>
             )}
-            {a.status === 'CLOSED' && (
+            {a.status === 'CLOSED' && !isExplain && (
               <>
                 <Button onClick={() => void life('activity:reveal')} disabled={busy}>
                   <Eye /> Show answer
@@ -198,7 +213,7 @@ export function ActivityRow({
                 )}
               </>
             )}
-            {a.status !== 'LIVE' && !isExplain && (
+            {a.status !== 'LIVE' && (
               <Button variant="ghost" size="sm" onClick={onEdit}>
                 <Pencil /> Edit
               </Button>

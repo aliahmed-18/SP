@@ -40,7 +40,9 @@ export function QuestionScreen({
           {a.prompt}
         </h1>
       </div>
-      {a.kind === 'NUMERIC' ? (
+      {a.type === 'EXPLAIN' ? (
+        <p className="text-4xl font-medium text-primary">Write your answer on your phone</p>
+      ) : a.kind === 'NUMERIC' ? (
         <p className="text-3xl text-muted-foreground">Type your answer on your phone.</p>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2">
@@ -70,7 +72,8 @@ export function QuestionScreen({
           />
         </div>
         <p className="mt-6 flex items-center justify-center gap-2 text-xl text-muted-foreground">
-          <EyeOff className="size-6" aria-hidden /> Results hidden
+          <EyeOff className="size-6" aria-hidden />{' '}
+          {a.type === 'EXPLAIN' ? 'Answers stay private' : 'Results hidden'}
         </p>
       </div>
     </section>

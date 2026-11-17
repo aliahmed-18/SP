@@ -6,7 +6,9 @@ import { LoadingState } from '@/components/brand/brand';
 import { ReconnectingBanner } from '@/components/layout/ReconnectingBanner';
 import { dismiss, getMyQuestions, isDismissed, type MyQuestion } from '@/lib/local-history';
 import { ActivityView } from './activity/ActivityView';
+import { ExplainView } from './activity/ExplainView';
 import { AskSheet } from './AskSheet';
+import { TakeawayView } from '@/features/takeaway/TakeawayView';
 import { AskBox } from './AskBox';
 import { InvalidSession } from './InvalidSession';
 import { MyQuestions } from './MyQuestions';
@@ -17,7 +19,7 @@ import { useStudentState } from './use-student-state';
 /** `/s/:code` — the phone screen (shots 20–29). */
 export function StudentPage() {
   const code = normalizeJoinCode(useParams().code ?? '');
-  const { state, status, getSocket, applyMeToo, applyMyResponse } = useStudentState(code);
+  const { state, status, getSocket, applyMeToo, applyMyResponse, takeawayRev } = useStudentState(code);
 
   if (status === 'refused') return <InvalidSession code={code} />;
   if (!state) return <LoadingState text="Joining the lecture…" />;
@@ -30,6 +32,8 @@ export function StudentPage() {
       getSocket={getSocket}
       applyMeToo={applyMeToo}
       applyMyResponse={applyMyResponse}
+      takeawayRev={takeawayRev}
+      code={code}
     />
   );
 }
@@ -40,8 +44,14 @@ function StudentView({
   getSocket,
   applyMeToo,
   applyMyResponse,
-}: Pick<ReturnType<typeof useStudentState>, 'getSocket' | 'applyMeToo' | 'applyMyResponse' | 'status'> & {
+  takeawayRev,
+  code,
+}: Pick<
+  ReturnType<typeof useStudentState>,
+  'getSocket' | 'applyMeToo' | 'applyMyResponse' | 'status' | 'takeawayRev'
+> & {
   state: NonNullable<ReturnType<typeof useStudentState>['state']>;
+  code: string;
 }) {
   const sessionId = state.session.id;
   const [mine, setMine] = useState<MyQuestion[]>(() => getMyQuestions(sessionId));
@@ -59,19 +69,34 @@ function StudentView({
       <main className="mx-auto flex max-w-xl flex-col gap-6 px-4 py-6">
         {showActivity ? (
           <>
-            <ActivityView
-              key={activityKey}
-              sessionId={sessionId}
-              activity={activity}
-              mine={state.myResponse}
-              getSocket={getSocket}
-              onMine={applyMyResponse}
-              onBack={() => {
-                dismiss(activityKey!);
-                rerender((n) => n + 1);
-                window.scrollTo({ top: 0 });
-              }}
-            />
+            {activity.type === 'EXPLAIN' ? (
+              <ExplainView
+                key={activityKey}
+                activity={activity}
+                mine={state.myResponse}
+                getSocket={getSocket}
+                onMine={applyMyResponse}
+                onBack={() => {
+                  dismiss(activityKey!);
+                  rerender((n) => n + 1);
+                  window.scrollTo({ top: 0 });
+                }}
+              />
+            ) : (
+              <ActivityView
+                key={activityKey}
+                sessionId={sessionId}
+                activity={activity}
+                mine={state.myResponse}
+                getSocket={getSocket}
+                onMine={applyMyResponse}
+                onBack={() => {
+                  dismiss(activityKey!);
+                  rerender((n) => n + 1);
+                  window.scrollTo({ top: 0 });
+                }}
+              />
+            )}
             <AskSheet
               sessionId={sessionId}
               getSocket={getSocket}
@@ -80,6 +105,8 @@ function StudentView({
               onSent={setMine}
             />
           </>
+        ) : ended && state.takeawayPublished ? (
+          <TakeawayView code={code} sessionId={sessionId} rev={takeawayRev} />
         ) : ended ? (
           <section
             className="fade-in flex flex-col items-center gap-3 rounded-2xl border bg-card p-8 text-center"
@@ -117,7 +144,7 @@ function StudentView({
             />
           </>
         )}
-        {!showActivity && (
+        {!showActivity && !(ended && state.takeawayPublished) && (
           <>
             <MyQuestions questions={mine} />
             <TopicsList

@@ -1,4 +1,4 @@
-import { CircleCheck, Users } from 'lucide-react';
+import { CircleCheck, MessageSquareText, Users } from 'lucide-react';
 import type { ProjectedTopic } from '@getit/shared';
 
 /** A Q&A topic pushed from the host: anonymous questions + the reply. */
@@ -49,5 +49,42 @@ export function EndedScreen() {
       <p className="text-3xl text-muted-foreground">Thank you!</p>
       <h1 className="text-7xl font-bold">The lecture has ended</h1>
     </div>
+  );
+}
+
+/** Explain, closed: no answer texts on the projector (only a misconception the host chooses to show). */
+export function AnswersCollected({ prompt, count }: { prompt: string; count: number }) {
+  return (
+    <section className="run-step flex w-full max-w-6xl flex-col gap-6 text-center">
+      <MessageSquareText className="mx-auto size-16 text-primary" aria-hidden />
+      <h1 className="text-5xl leading-tight font-bold" dir="auto">
+        {prompt}
+      </h1>
+      <p className="text-4xl text-muted-foreground">
+        Answers collected: <strong className="text-foreground">{count}</strong>
+      </p>
+    </section>
+  );
+}
+
+/** One anonymous answer tagged as a misconception, to discuss with the class (spec C3). */
+export function MisconceptionScreen({ prompt, text }: { prompt: string; text: string }) {
+  return (
+    <section className="run-step flex w-full max-w-6xl flex-col gap-8" aria-labelledby="misconception">
+      <p className="text-2xl font-semibold text-attention-foreground dark:text-attention">
+        Let's discuss this answer
+      </p>
+      <p className="text-3xl text-muted-foreground" dir="auto">
+        {prompt}
+      </p>
+      <blockquote
+        id="misconception"
+        className="rounded-3xl border-l-8 border-attention bg-attention/10 p-10 text-5xl leading-snug font-semibold"
+        dir="auto"
+      >
+        “{text}”
+      </blockquote>
+      <p className="text-2xl text-muted-foreground">Anonymous — what would you change?</p>
+    </section>
   );
 }

@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Copy, ListChecks } from 'lucide-react';
-import type { ActivityStats, HostState, QuickCheckKind } from '@getit/shared';
+import { Copy, ListChecks, MessageSquareText } from 'lucide-react';
+import type { ActivityStats, HostActivity, HostState, QuickCheckKind } from '@getit/shared';
 import { Button } from '@/components/ui/button';
 import type { GetitSocket } from '@/lib/socket';
 import { activitiesApi } from './activities-api';
 import { ActivityEditorDialog, type EditorTarget } from './ActivityEditorDialog';
 import { ActivityRow } from './ActivityRow';
 import { CopyActivitiesDialog } from './CopyActivitiesDialog';
+import { ExplainEditorDialog } from './ExplainEditorDialog';
 import { KIND_ICON, KIND_LABEL } from './kinds';
 
 const KINDS: QuickCheckKind[] = ['MCQ', 'TRUE_FALSE', 'NUMERIC'];
@@ -25,6 +26,7 @@ export function ActivitiesSection({
   const ended = session.status === 'ENDED';
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [explainEditor, setExplainEditor] = useState<{ activity?: HostActivity } | null>(null);
 
   const move = (index: number, dir: -1 | 1) => {
     const ids = activities.map((a) => a.id);
@@ -46,8 +48,8 @@ export function ActivitiesSection({
               <Copy /> Copy from an earlier session
             </Button>
           </div>
-          <p className="text-sm font-medium text-primary">Quick Check</p>
-          <div className="grid grid-cols-3 gap-3">
+          <p className="text-sm font-medium text-primary">Assess</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {KINDS.map((k) => {
               const Icon = KIND_ICON[k];
               return (
@@ -64,6 +66,17 @@ export function ActivitiesSection({
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={() => setExplainEditor({})}
+              className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-3 text-center font-medium transition-colors hover:bg-accent/60"
+            >
+              <span className="grid size-10 place-items-center rounded-lg bg-accent text-primary">
+                <MessageSquareText className="size-5" aria-hidden />
+              </span>
+              Explain
+              <span className="-mt-1 text-xs font-normal text-muted-foreground">Short written answer</span>
+            </button>
           </div>
         </section>
       )}
@@ -98,7 +111,11 @@ export function ActivitiesSection({
                 anotherLive={liveActivityId !== null && liveActivityId !== a.id}
                 ended={ended}
                 getSocket={getSocket}
-                onEdit={() => setEditor({ kind: a.kind ?? 'MCQ', activity: a })}
+                onEdit={() =>
+                  a.type === 'EXPLAIN'
+                    ? setExplainEditor({ activity: a })
+                    : setEditor({ kind: a.kind ?? 'MCQ', activity: a })
+                }
                 onMove={(dir) => move(i, dir)}
               />
             ))}
@@ -107,6 +124,11 @@ export function ActivitiesSection({
       </section>
 
       <ActivityEditorDialog code={session.code} target={editor} onClose={() => setEditor(null)} />
+      <ExplainEditorDialog
+        code={session.code}
+        target={explainEditor}
+        onClose={() => setExplainEditor(null)}
+      />
       <CopyActivitiesDialog
         code={session.code}
         sessionId={session.id}

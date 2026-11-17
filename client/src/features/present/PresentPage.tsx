@@ -15,7 +15,13 @@ import { ReconnectingBanner } from '@/components/layout/ReconnectingBanner';
 import { Button } from '@/components/ui/button';
 import { emitAck } from '@/lib/emit';
 import { cn } from '@/lib/utils';
-import { EndedScreen, TopicScreen, WrapScreen } from './screens/OtherScreens';
+import {
+  AnswersCollected,
+  EndedScreen,
+  MisconceptionScreen,
+  TopicScreen,
+  WrapScreen,
+} from './screens/OtherScreens';
 import { QuestionScreen } from './screens/QuestionScreen';
 import { ResultsScreen } from './screens/ResultsScreen';
 import { Welcome } from './screens/Welcome';
@@ -75,7 +81,7 @@ export function PresentPage() {
     });
   }, [state, run]);
   const voteAgain = useCallback(() => {
-    if (stage?.status !== 'CLOSED') return;
+    if (stage?.status !== 'CLOSED' || stage.type !== 'QUICK_CHECK') return;
     void emitAck(getSocket(), 'activity:newRound', {
       activityId: stage.id,
       timerSec: state?.settings.timerSec ?? 0,
@@ -121,11 +127,16 @@ export function PresentPage() {
   const ended = session.status === 'ENDED';
   const blank = projected?.kind === 'blank';
   const live = stage && liveStats[stage.id]?.round === stage.round ? liveStats[stage.id] : undefined;
-  const answered = live?.responses ?? stage?.stats[stage.stats.length - 1]?.count ?? 0;
+  const answered =
+    live?.responses ??
+    (stage?.type === 'EXPLAIN' ? stage.responseCount : stage?.stats[stage.stats.length - 1]?.count) ??
+    0;
 
   let screen: React.ReactNode;
   if (ended) screen = <EndedScreen />;
   else if (projected?.kind === 'topic') screen = <TopicScreen topic={projected.topic} />;
+  else if (projected?.kind === 'misconception')
+    screen = <MisconceptionScreen prompt={projected.prompt} text={projected.text} />;
   else if (projected?.kind === 'wrap')
     screen = (
       <WrapScreen activities={list.filter((a) => a.status !== 'DRAFT').length} joined={session.joinedCount} />
@@ -140,6 +151,7 @@ export function PresentPage() {
         joined={live?.joined ?? session.joinedCount}
       />
     );
+  else if (stage.type === 'EXPLAIN') screen = <AnswersCollected prompt={stage.prompt} count={answered} />;
   else screen = <ResultsScreen activity={stage} />;
 
   return (
@@ -212,7 +224,7 @@ export function PresentPage() {
       {!blank && !ended && (
         <footer className="flex items-center gap-3 border-t px-6 py-3">
           <p className="flex-1 text-sm text-muted-foreground">{KEYS_HELP}</p>
-          {stage?.status === 'CLOSED' && projected === null && (
+          {stage?.status === 'CLOSED' && stage.type === 'QUICK_CHECK' && projected === null && (
             <Button variant="outline" size="lg" onClick={voteAgain} disabled={busy}>
               <RotateCcw /> Start round {stage.round + 1}
             </Button>

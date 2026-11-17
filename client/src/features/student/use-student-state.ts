@@ -11,6 +11,8 @@ export function useStudentState(code: string) {
   const [state, setStateRaw] = useState<StudentState | null>(null);
   const ref = useRef<StudentState | null>(null);
   const mine = useRef<Set<string>>(new Set());
+  /** Bumped on takeaway:published so the Take-away page refetches (also after later edits). */
+  const [takeawayRev, setTakeawayRev] = useState(0);
 
   const setState = useCallback((next: StudentState) => {
     ref.current = next;
@@ -34,6 +36,10 @@ export function useStudentState(code: string) {
         // A different activity or a new round means this phone hasn't answered it yet.
         const same = prev && activity && prev.id === activity.id && prev.round === activity.round;
         setState({ ...cur, liveActivity: activity, myResponse: same ? cur.myResponse : null });
+      });
+      s.on('takeaway:published', () => {
+        if (ref.current) setState({ ...ref.current, takeawayPublished: true });
+        setTakeawayRev((n) => n + 1);
       });
       s.on('session:ended', () => {
         if (ref.current) setState({ ...ref.current, session: { ...ref.current.session, status: 'ENDED' } });
@@ -72,5 +78,5 @@ export function useStudentState(code: string) {
     [setState],
   );
 
-  return { state, applyMeToo, applyMyResponse, ...live };
+  return { state, applyMeToo, applyMyResponse, takeawayRev, ...live };
 }

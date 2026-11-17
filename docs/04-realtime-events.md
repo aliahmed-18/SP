@@ -20,7 +20,7 @@ Put all event names and payload types in `shared/src/events.ts` and use typed So
 
 ## Three different views of the same data (DTO builders in `server/src/realtime/broadcast.ts`)
 - `toStudentActivity(a)` — `{ id, type, kind, prompt, options, status, round }` + `{ correct, explanation, tolerance }` **only if REVEALED**. Never `modelAnswer`. Never others' answers or counts.
-- `toHostActivity(a)` — everything + per-round stats + responses count (Explain: answer texts + tags, no device hashes).
+- `toHostActivity(a)` — everything + per-round stats + responses count (Explain: answer texts + tags **only after closing**, no device hashes).
 - `toPresentActivity(a)` — like host but **no modelAnswer, no Explain texts** except a misconception explicitly chosen for the projector.
 
 ## Snapshots
@@ -45,7 +45,7 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 | `topic:metoo` | student | `{ topicId, on: boolean }` | insert/delete MeToo |
 | `activity:answer` | student | `{ activityId, round, answer }` | must be LIVE + current round; duplicate → ack with the existing answer |
 | `activity:confidence` | student | `{ activityId, round, confident: boolean \| null }` | update own response |
-| `explain:submit` | student | `{ activityId, text }` | moderate (stealth), one per device |
+| `explain:submit` | student | `{ activityId, text }` | ≤ 200, one per device; moderated (stealth): a blocked answer is stored **without text** (so the device can't resend) and counted as flagged; stored / blocked / duplicate get the same ack `MyResponse` |
 | `activity:launch` | host/present | `{ activityId, timerSec? }` | one-live rule; `timerSec` sets `closesAt`; clears any projected item |
 | `activity:close` | host/present | `{ activityId, reveal?: boolean }` | |
 | `activity:reveal` | host/present | `{ activityId }` | |
@@ -53,7 +53,7 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 | `activity:undo` | present | `{ activityId }` | step back one step: REVEALED→CLOSED→LIVE; a LIVE question **nobody answered yet** → DRAFT (round 1, stage returns to the previous activity) or CLOSED round n−1 (mis-pressed clicker) |
 | `activity:addTime` | host/present | `{ activityId }` | +15 s on a running timer |
 | `present:settings` | host/present | `{ timerSec: 0\|30\|60\|90, autoReveal }` | stored in `Session.presentSettings` (survives a projector refresh; used by the auto-close) |
-| `present:project` | host/present | `{ item: { kind: "welcome" \| "blank" \| "wrap" } \| { kind: "topic", id } \| null }` | stored in `Session.projected`; `null` = back to the activity. (`misconception` arrives with Explain in Phase 6.) |
+| `present:project` | host/present | `{ item: { kind: "welcome" \| "blank" \| "wrap" } \| { kind: "topic", id } \| null }` | stored in `Session.projected`; `null` = back to the activity. `{ kind: "misconception", id }` shows one Explain answer tagged MISCONCEPTION, anonymously (prompt + text only). |
 
 ## Server → Client
 | Event | To rooms | Payload |

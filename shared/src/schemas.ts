@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { CODE_REGEX, normalizeJoinCode } from './codes';
 import {
   ACTIVITY_LIMITS,
-  EXPLAIN_MAX,
   EXPLAIN_TAGS,
   INVALID_CODE_MESSAGE,
   LIMITS,

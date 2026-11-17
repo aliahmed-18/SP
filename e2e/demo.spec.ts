@@ -30,8 +30,10 @@ test('the demo, start to finish', async ({ page, context, browser }) => {
   for (const data of ACTIVITIES) {
     expect((await page.request.post(`/api/sessions/${code}/activities`, { data })).status()).toBe(201);
   }
-  await page.getByRole('button', { name: 'Start presenting' }).click();
-  const proj = await context.waitForEvent('page');
+  const [proj] = await Promise.all([
+    context.waitForEvent('page'),
+    page.getByRole('button', { name: 'Start presenting' }).click(),
+  ]);
   await proj.setViewportSize({ width: 1920, height: 1080 });
   await expect(proj.getByText('Welcome! Scan to join the session')).toBeVisible();
   // Professors scan the QR with their own phones → the joined count climbs on the projector.
@@ -159,9 +161,8 @@ test('the demo, start to finish', async ({ page, context, browser }) => {
   ]);
   expect(xlsx.suggestedFilename()).toMatch(/\.xlsx$/);
   await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: /Linear regression and correlation/ }).first()).toContainText(
-    'Ended',
-  );
+  // This session's own row (other runs may have left sessions with the same title).
+  await expect(page.locator(`main a[href="/s/${code}/host"]`)).toContainText('Ended');
 
   // An iPhone-sized phone still renders the Take-away (Safari-like viewport).
   const iphone = await (await browser.newContext({ ...devices['iPhone 13'] })).newPage();

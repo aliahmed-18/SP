@@ -1,12 +1,6 @@
 import { z } from 'zod';
 import { CODE_REGEX, normalizeJoinCode } from './codes';
-import {
-  ACTIVITY_LIMITS,
-  EXPLAIN_TAGS,
-  INVALID_CODE_MESSAGE,
-  LIMITS,
-  TAKEAWAY_LIMITS,
-} from './constants';
+import { ACTIVITY_LIMITS, EXPLAIN_TAGS, INVALID_CODE_MESSAGE, LIMITS, TAKEAWAY_LIMITS } from './constants';
 
 // Plain constants live in constants.ts (no zod), so phones don't download zod just to read a limit.
 export * from './constants';

@@ -12,7 +12,7 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
-        value: "22"
+        value: '22'
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
@@ -30,4 +30,4 @@ databases:
   - name: getit-db
     plan: basic-256mb
     region: frankfurt
-    postgresMajorVersion: "16"
+    postgresMajorVersion: '16'

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CircleStop, Download, Play, Plus } from 'lucide-react';
+import { CircleStop, Download, LayoutList, MessagesSquare, Play, Plus } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { normalizeJoinCode, type HostState } from '@getit/shared';
@@ -13,6 +13,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { UserMenu } from '@/features/auth/UserMenu';
 import { TakeawayEditor } from '@/features/takeaway/TakeawayEditor';
 import { api, ApiRequestError } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { openPresentWindow } from '@/lib/links';
 import { ActivitiesSection } from './activities/ActivitiesSection';
 import { EndSessionDialog } from './EndSessionDialog';
@@ -27,6 +28,8 @@ export function HostPage() {
   const { state, setState, status, refusal, liveStats, getSocket } = useHostState(code);
   const [qrOpen, setQrOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  // Phones and tablets show one side at a time (laptops show both side by side).
+  const [view, setView] = useState<'session' | 'qa'>('session');
 
   if (status === 'refused') {
     return (
@@ -107,8 +110,18 @@ export function HostPage() {
           </div>
         )}
 
-        <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_400px] lg:items-start">
-          <div className="flex min-w-0 flex-col gap-6">
+        <HostViewTabs
+          view={view}
+          onChange={(v) => {
+            setView(v);
+            window.scrollTo({ top: 0 });
+          }}
+          sessionLabel={ended ? 'Take-away' : 'Session'}
+          openQuestions={state.questions.filter((q) => !q.addressed).length}
+        />
+
+        <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_400px] lg:items-start lg:py-8">
+          <div className={cn('flex min-w-0 flex-col gap-6', view !== 'session' && 'max-lg:hidden')}>
             <h1 className="text-2xl font-semibold sm:text-3xl" dir="auto">
               <span className="font-normal text-muted-foreground">Topic: </span>
               {session.topic}
@@ -149,12 +162,73 @@ export function HostPage() {
             )}
           </div>
 
-          <QaPanel state={state} onShowQr={() => setQrOpen(true)} />
+          <div className={cn('min-w-0', view !== 'qa' && 'max-lg:hidden')}>
+            <QaPanel state={state} onShowQr={() => setQrOpen(true)} />
+          </div>
         </main>
 
         <QrDialog code={session.code} open={qrOpen} onOpenChange={setQrOpen} />
         <EndSessionDialog open={endOpen} onOpenChange={setEndOpen} onConfirm={() => void endSession()} />
       </div>
     </HostContext.Provider>
+  );
+}
+
+/** Phone/tablet switch between the session (activities) and Q&A; hidden on laptops. */
+function HostViewTabs({
+  view,
+  onChange,
+  sessionLabel,
+  openQuestions,
+}: {
+  view: 'session' | 'qa';
+  onChange: (v: 'session' | 'qa') => void;
+  sessionLabel: string;
+  openQuestions: number;
+}) {
+  const tabs = [
+    { id: 'session' as const, label: sessionLabel, Icon: LayoutList, count: 0 },
+    { id: 'qa' as const, label: 'Q&A', Icon: MessagesSquare, count: openQuestions },
+  ];
+  return (
+    <div className="sticky top-0 z-30 border-b bg-background/90 backdrop-blur lg:hidden">
+      <div
+        role="tablist"
+        aria-label="Session view"
+        className="mx-auto grid max-w-6xl grid-cols-2 gap-1 px-4 py-2 sm:px-6"
+      >
+        {tabs.map(({ id, label, Icon, count }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={view === id}
+            onClick={() => onChange(id)}
+            className={cn(
+              'flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-colors',
+              'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+              view === id
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-muted',
+            )}
+            data-testid={`host-view-${id}`}
+          >
+            <Icon className="size-4" aria-hidden />
+            {label}
+            {count > 0 && (
+              <span
+                className={cn(
+                  'min-w-5 rounded-full px-1.5 text-xs leading-5',
+                  view === id ? 'bg-primary-foreground/20' : 'bg-attention/20 text-attention-foreground',
+                )}
+              >
+                {count}
+                <span className="sr-only"> open questions</span>
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

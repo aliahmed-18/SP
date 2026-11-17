@@ -11,7 +11,7 @@ export function QaPanel({ state, onShowQr }: { state: HostState; onShowQr: () =>
   return (
     <aside aria-labelledby="qa-title" className="min-w-0 rounded-2xl border bg-card">
       <Tabs defaultValue={topics.length ? 'topics' : 'list'}>
-        <div className="flex flex-col gap-3 border-b p-5">
+        <div className="flex flex-col gap-3 border-b p-4 sm:p-5">
           <div className="flex items-start justify-between">
             <div>
               <h2 id="qa-title" className="text-lg font-semibold">
@@ -39,7 +39,7 @@ export function QaPanel({ state, onShowQr }: { state: HostState; onShowQr: () =>
             </TabsTrigger>
           </TabsList>
         </div>
-        <div className="p-4">
+        <div className="p-2 sm:p-4">
           <TabsContent value="topics">
             <TopicsTab state={state} />
           </TabsContent>

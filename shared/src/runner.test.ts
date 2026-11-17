@@ -84,9 +84,27 @@ describe('present runner: one key moves forward', () => {
     });
   });
 
-  it('Explain activities are not run yet; no activities → nothing to do', () => {
-    const explain = { id: 'e', type: 'EXPLAIN' as const, status: 'DRAFT' as const, position: 1 };
-    expect(nextStep({ activities: [explain], stageActivityId: null, projected: null }, true)).toEqual({
+  it('Explain: open → close answers → next (no reveal step); no activities → nothing to do', () => {
+    const ex = (status: ActivityStatus) => ({ id: 'e', type: 'EXPLAIN' as const, status, position: 1 });
+    const after = qc('b', 2);
+    const st = (status: ActivityStatus, projected: { kind: 'misconception' } | null = null) => ({
+      activities: [ex(status), after],
+      stageActivityId: status === 'DRAFT' ? null : 'e',
+      projected,
+    });
+    expect(nextStep(st('DRAFT'), true)).toMatchObject({ type: 'launch', activityId: 'e' });
+    expect(nextStep(st('LIVE'), true)).toEqual({
+      type: 'close',
+      activityId: 'e',
+      reveal: false,
+      label: 'Close answers',
+    });
+    expect(nextStep(st('CLOSED'), true)).toMatchObject({ type: 'launch', activityId: 'b' });
+    expect(nextStep(st('CLOSED', { kind: 'misconception' }), true)).toMatchObject({
+      type: 'project',
+      item: null,
+    });
+    expect(nextStep({ activities: [], stageActivityId: null, projected: null }, true)).toEqual({
       type: 'none',
       label: 'No activities yet',
     });

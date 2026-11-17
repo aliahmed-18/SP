@@ -1,26 +1,31 @@
 import { Router } from 'express';
 import {
+  activityDraftSchema,
   activityTextFixSchema,
   codeParamSchema,
   copyActivitiesSchema,
+  explainTextFixSchema,
   idParamSchema,
   quickCheckDraftSchema,
   reorderSchema,
+  tagSchema,
 } from '@getit/shared';
 import { instructorId, requireInstructor } from '../auth/middleware';
 import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
 import { parse } from '../lib/validate';
 import { emitHostSnapshot, emitPresentSnapshot, safeEmit } from '../realtime/broadcast';
-import { toHostActivity } from '../realtime/dto';
+import { NO_RESULTS, toHostActivity } from '../realtime/dto';
 import {
+  activityResults,
   copyActivities,
+  createExplain,
   createQuickCheck,
   deleteActivity,
   editActivity,
   reorderActivities,
-  statsFor,
 } from '../services/activities';
+import { tagExplainAnswer } from '../services/responses';
 import { ensureNotExpired, getHostSession } from '../services/sessions';
 
 // Activity set-up (docs/03 §Activities). Lifecycle (launch/close/reveal…) goes through Socket.io.
@@ -42,23 +47,26 @@ function structureChanged(sessionId: string) {
 
 activitiesRouter.post('/sessions/:code/activities', requireInstructor, async (req, res) => {
   const { code } = parse(codeParamSchema, req.params);
-  const draft = parse(quickCheckDraftSchema, req.body);
+  const draft = parse(activityDraftSchema, req.body);
   const s = await getHostSession(instructorId(res), code);
-  const { activity } = await createQuickCheck(s.id, draft);
+  const { activity } =
+    draft.type === 'EXPLAIN' ? await createExplain(s.id, draft) : await createQuickCheck(s.id, draft);
   structureChanged(s.id);
-  res.status(201).json(toHostActivity(activity, []));
+  res.status(201).json(toHostActivity(activity, NO_RESULTS));
 });
 
 activitiesRouter.patch('/activities/:id', async (req, res) => {
   const { id } = parse(idParamSchema, req.params);
   const a = await ownedActivity(instructorId(res), id);
   const change =
-    a.status === 'DRAFT'
-      ? { full: parse(quickCheckDraftSchema, req.body) }
-      : { text: parse(activityTextFixSchema, req.body) };
+    a.type === 'EXPLAIN'
+      ? { explain: parse(explainTextFixSchema, req.body) }
+      : a.status === 'DRAFT'
+        ? { full: parse(quickCheckDraftSchema, req.body) }
+        : { text: parse(activityTextFixSchema, req.body) };
   const { activity } = await editActivity(a, change);
   structureChanged(a.sessionId);
-  res.json(toHostActivity(activity, await statsFor(activity)));
+  res.json(toHostActivity(activity, await activityResults(activity)));
 });
 
 activitiesRouter.delete('/activities/:id', async (req, res) => {
@@ -88,4 +96,13 @@ activitiesRouter.post('/sessions/:code/activities/copy', requireInstructor, asyn
   const { copied } = await copyActivities(me, s.id, fromSessionId);
   structureChanged(s.id);
   res.status(201).json({ copied });
+});
+
+/** Explain answer tag (Correct / Partial / Misconception, or null to clear). */
+activitiesRouter.patch('/responses/:id/tag', requireInstructor, async (req, res) => {
+  const { id } = parse(idParamSchema, req.params);
+  const { tag } = parse(tagSchema, req.body);
+  const { sessionId } = await tagExplainAnswer(instructorId(res), id, tag);
+  safeEmit(emitHostSnapshot(sessionId));
+  res.status(204).end();
 });

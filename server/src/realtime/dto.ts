@@ -1,6 +1,7 @@
 // Allow-list DTO builders (CLAUDE.md rule 3: never spread DB rows). No device hash in any of them.
 import type {
   Answer,
+  ExplainAnswer,
   HostActivity,
   HostPart,
   HostQuestion,
@@ -79,7 +80,11 @@ export function toStudentActivity(a: Activity): StudentActivity {
   };
 }
 
-export function toHostActivity(a: Activity, stats: RoundStats[]): HostActivity {
+/** Everything computed from responses: Quick Check stats, Explain answers (texts only once closed). */
+export type ActivityResults = { stats: RoundStats[]; responseCount: number; explainAnswers: ExplainAnswer[] };
+export const NO_RESULTS: ActivityResults = { stats: [], responseCount: 0, explainAnswers: [] };
+
+export function toHostActivity(a: Activity, r: ActivityResults): HostActivity {
   return {
     id: a.id,
     type: a.type,
@@ -94,11 +99,14 @@ export function toHostActivity(a: Activity, stats: RoundStats[]): HostActivity {
     round: a.round,
     position: a.position,
     closesAt: a.status === 'LIVE' ? (a.closesAt?.toISOString() ?? null) : null,
-    stats,
+    stats: r.stats,
+    responseCount: r.responseCount,
+    explainAnswers: r.explainAnswers,
   };
 }
 
-export function toPresentActivity(a: Activity, stats: RoundStats[]): PresentActivity {
-  const { modelAnswer: _never, ...rest } = toHostActivity(a, stats);
+/** Projector: never the model answer, never Explain texts (one misconception is projected on its own). */
+export function toPresentActivity(a: Activity, r: ActivityResults): PresentActivity {
+  const { modelAnswer: _never, explainAnswers: _notHere, ...rest } = toHostActivity(a, r);
   return rest;
 }

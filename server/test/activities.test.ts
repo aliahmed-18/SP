@@ -152,7 +152,7 @@ describe('drafts (REST)', () => {
       ['MCQ', 'DRAFT', 1],
       ['NUMERIC', 'DRAFT', 1],
     ]);
-    // Explain activities aren't copied (or launchable) until the Explain tool exists.
+    // Explain activities are copied too (with their model answer).
     await prisma.activity.create({
       data: {
         sessionId: s.id,
@@ -165,7 +165,7 @@ describe('drafts (REST)', () => {
     const again = await agent
       .post(`/api/sessions/${next.code}/activities/copy`)
       .send({ fromSessionId: s.id });
-    expect(again.body).toEqual({ copied: 2 });
+    expect(again.body).toEqual({ copied: 3 });
     const other = await newInstructor();
     const theirs = (await other.agent.post('/api/sessions').send({ topic: 'Theirs' })).body;
     expect(
@@ -217,14 +217,6 @@ describe('lifecycle + one live activity', () => {
     // Nobody answered round 2 yet: undo takes the round back.
     expect((await act('activity:undo', a)).ok).toBe(true);
     expect(await status()).toMatchObject({ status: 'CLOSED', round: 1 });
-  });
-
-  it('an Explain activity cannot be launched yet', async () => {
-    const { act, s } = await setup();
-    const e = await prisma.activity.create({
-      data: { sessionId: s.id, type: 'EXPLAIN', prompt: 'Explain b', position: 1 },
-    });
-    expect(await act('activity:launch', e.id)).toMatchObject({ ok: false, error: { code: 'NOT_SUPPORTED' } });
   });
 
   it('students cannot drive the lifecycle', async () => {

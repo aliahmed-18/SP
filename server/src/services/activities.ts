@@ -2,7 +2,7 @@ import { summarizeRound, type QuickCheckDraft, type RoundStats } from '@getit/sh
 import { Prisma, type Activity } from '@prisma/client';
 import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
-import { asAnswer } from '../realtime/dto';
+import { asAnswer, type ActivityResults } from '../realtime/dto';
 import { bumpVersion } from './version';
 
 export const ONE_LIVE_MESSAGE = 'One activity can be live at a time.';
@@ -32,6 +32,25 @@ export async function statsFor(a: Activity, db: Prisma.TransactionClient = prism
   return out;
 }
 
+/** Stats (Quick Check) + count + Explain answers (texts only after closing; blocked ones have none). */
+export async function activityResults(a: Activity): Promise<ActivityResults> {
+  if (a.type === 'QUICK_CHECK') {
+    const stats = await statsFor(a);
+    return { stats, responseCount: stats[stats.length - 1]?.count ?? 0, explainAnswers: [] };
+  }
+  const rows = await prisma.response.findMany({
+    where: { activityId: a.id },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, text: true, tag: true },
+  });
+  const open = a.status === 'LIVE' || a.status === 'DRAFT';
+  return {
+    stats: [],
+    responseCount: rows.length,
+    explainAnswers: open ? [] : rows.flatMap((r) => (r.text ? [{ id: r.id, text: r.text, tag: r.tag }] : [])),
+  };
+}
+
 // ─── Create / edit / delete / order ─────────────────────────────────────────
 
 function draftData(d: QuickCheckDraft) {
@@ -51,6 +70,21 @@ async function nextPosition(tx: Prisma.TransactionClient, sessionId: string) {
   return (last?.position ?? 0) + 1;
 }
 
+export async function createExplain(sessionId: string, draft: { prompt: string; modelAnswer: string }) {
+  return prisma.$transaction(async (tx) => {
+    const a = await tx.activity.create({
+      data: {
+        sessionId,
+        type: 'EXPLAIN',
+        prompt: draft.prompt,
+        modelAnswer: draft.modelAnswer || null,
+        position: await nextPosition(tx, sessionId),
+      },
+    });
+    return { activity: a, version: await bumpVersion(tx, sessionId) };
+  });
+}
+
 export async function createQuickCheck(sessionId: string, draft: QuickCheckDraft) {
   return prisma.$transaction(async (tx) => {
     const a = await tx.activity.create({
@@ -65,12 +99,15 @@ export async function editActivity(
   a: Activity,
   change:
     | { full: QuickCheckDraft }
-    | { text: { prompt: string; explanation: string; options?: string[] | undefined } },
+    | { text: { prompt: string; explanation: string; options?: string[] | undefined } }
+    | { explain: { prompt: string; modelAnswer: string } },
 ) {
   if (a.status === 'LIVE') throw new HttpError(409, 'ACTIVITY_LIVE', 'Close the activity before editing it.');
   return prisma.$transaction(async (tx) => {
     let data: Prisma.ActivityUpdateInput;
-    if ('full' in change) {
+    if ('explain' in change) {
+      data = { prompt: change.explain.prompt, modelAnswer: change.explain.modelAnswer || null };
+    } else if ('full' in change) {
       if (a.status !== 'DRAFT') {
         throw new HttpError(409, 'ALREADY_RUN', 'After launching you can only fix the wording.');
       }
@@ -123,9 +160,8 @@ export async function copyActivities(instructorId: string, sessionId: string, fr
   if (!from || from.instructorId !== instructorId)
     throw new HttpError(404, 'NOT_FOUND', 'Session not found.');
   return prisma.$transaction(async (tx) => {
-    // Quick Checks only until Explain is built (Phase 6), so a copied Explain can't be launched half-done.
     const source = await tx.activity.findMany({
-      where: { sessionId: fromSessionId, type: 'QUICK_CHECK' },
+      where: { sessionId: fromSessionId },
       orderBy: { position: 'asc' },
     });
     let position = await nextPosition(tx, sessionId);
@@ -212,8 +248,6 @@ export function launchActivity(sessionId: string, activityId: string, timerSec =
     await requireLiveSession(tx, sessionId);
     const a = await load(tx, sessionId, activityId);
     if (a.status !== 'DRAFT') throw new HttpError(409, 'NOT_DRAFT', 'This activity has already been run.');
-    if (a.type !== 'QUICK_CHECK')
-      throw new HttpError(409, 'NOT_SUPPORTED', 'Explain activities are not available yet.');
     await claimLiveSlot(tx, sessionId, a.id);
     return finish(
       tx,

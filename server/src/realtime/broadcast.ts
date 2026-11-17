@@ -11,7 +11,7 @@ import {
 import type { Activity, Session } from '@prisma/client';
 import { prisma } from '../db';
 import { bus } from '../lib/bus';
-import { statsFor } from '../services/activities';
+import { activityResults } from '../services/activities';
 import { countJoined } from '../services/participants';
 import { buildProjectedView, readProjected, readSettings } from '../services/presentation';
 import { countResponses, myResponse } from '../services/responses';
@@ -71,17 +71,18 @@ export async function buildHostState(sessionId: string): Promise<HostState> {
     parts: parts.map(toHostPart),
     questions: questions.map(toHostQuestion),
     topics: topics.map(toHostTopic),
-    activities: await Promise.all(activities.map(async (a) => toHostActivity(a, await statsFor(a)))),
+    activities: await Promise.all(activities.map(async (a) => toHostActivity(a, await activityResults(a)))),
     liveActivityId: s.liveActivityId,
     stageActivityId: s.presentActivityId,
-    projectedTopicId: projectedTopicId(s),
+    projectedTopicId: projectedId(s, 'topic'),
+    projectedAnswerId: projectedId(s, 'misconception'),
     serverTime: new Date().toISOString(),
   };
 }
 
-function projectedTopicId(s: Session): string | null {
+function projectedId(s: Session, kind: 'topic' | 'misconception'): string | null {
   const item = readProjected(s.projected);
-  return item?.kind === 'topic' ? item.id : null;
+  return item?.kind === kind ? item.id : null;
 }
 
 /** The class's topic list as students see it, sorted (Me too, then question count). */
@@ -104,7 +105,7 @@ export async function buildPresentState(sessionId: string): Promise<PresentState
     version: s.version,
     session: { code: s.code, topic: s.topic, status: s.status, joinedCount: await countJoined(s.id) },
     activities: await Promise.all(
-      (await loadActivities(sessionId)).map(async (a) => toPresentActivity(a, await statsFor(a))),
+      (await loadActivities(sessionId)).map(async (a) => toPresentActivity(a, await activityResults(a))),
     ),
     liveActivityId: s.liveActivityId,
     stageActivityId: s.presentActivityId,
@@ -219,6 +220,11 @@ export function safeEmit(p: Promise<unknown>) {
   p.catch((err) => console.error('[getit] emit failed', err));
 }
 
+/** Phones refetch the published Take-away. */
+export function emitTakeawayPublished(sessionId: string) {
+  io?.to(rooms.students(sessionId)).emit('takeaway:published');
+}
+
 // ─── Activity emits ─────────────────────────────────────────────────────────
 
 /** After a lifecycle change: host (versioned), projector, and every phone (student DTO). */
@@ -231,13 +237,13 @@ export async function emitActivityChanged(r: {
   const server = io;
   if (!server) return;
   const { sessionId } = r.activity;
-  const stats = await statsFor(r.activity);
+  const results = await activityResults(r.activity);
   const ids = { liveActivityId: r.liveActivityId, stageActivityId: r.stageActivityId };
   server
     .to(rooms.host(sessionId))
-    .emit('activity:host', { version: r.version, activity: toHostActivity(r.activity, stats), ...ids });
+    .emit('activity:host', { version: r.version, activity: toHostActivity(r.activity, results), ...ids });
   server.to(rooms.present(sessionId)).emit('activity:present', {
-    activity: toPresentActivity(r.activity, stats),
+    activity: toPresentActivity(r.activity, results),
     ...ids,
     serverTime: new Date().toISOString(),
   });

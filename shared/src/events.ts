@@ -57,6 +57,11 @@ export interface ClientToServerEvents {
   'activity:close': (payload: { activityId: string; reveal?: boolean }, ack: (res: Ack) => void) => void;
   'activity:reveal': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
   'activity:newRound': (payload: { activityId: string; timerSec?: number }, ack: (res: Ack) => void) => void;
+  /** Student Explain answer (≤ 200). Ack identical whether stored, blocked or a duplicate (stealth). */
+  'explain:submit': (
+    payload: { activityId: string; text: string },
+    ack: (res: Ack<MyResponse>) => void,
+  ) => void;
   /** Projector timer chip: +15 s. */
   'activity:addTime': (payload: { activityId: string }, ack: (res: Ack) => void) => void;
   /** Host / projector: what the projector shows instead of the activity (null = back to it). */
@@ -101,6 +106,8 @@ export interface ServerToClientEvents {
   }) => void;
   /** Students: the activity on stage (student DTO — no answer before REVEALED), or null. */
   'activity:student': (payload: { activity: StudentActivity | null }) => void;
+  /** Students: the Take-away was published (or updated) — fetch it from /public/…/takeaway. */
+  'takeaway:published': () => void;
   /** Live answer count (throttled to ≤ 4/s per activity). */
   'activity:stats': (payload: ActivityStats) => void;
 }

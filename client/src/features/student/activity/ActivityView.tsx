@@ -36,7 +36,10 @@ type Props = {
 export function ActivityView({ sessionId, activity: a, mine, getSocket, onMine, onBack }: Props) {
   const kind = a.kind ?? 'MCQ';
   const revealed = a.status === 'REVEALED' && a.correct !== undefined;
-  const gotIt = revealed && mine ? isCorrect(mine.answer, a.correct!, kind, a.tolerance ?? null) : null;
+  const gotIt =
+    revealed && mine && mine.answer !== null
+      ? isCorrect(mine.answer, a.correct!, kind, a.tolerance ?? null)
+      : null;
   const Icon = HEADER[kind].icon;
 
   // Each new state (question opens, closes, answer shown) starts at the top so the heading is visible.
@@ -46,7 +49,7 @@ export function ActivityView({ sessionId, activity: a, mine, getSocket, onMine, 
 
   // Keep the revealed result on this phone for the Take-away review (spec F).
   useEffect(() => {
-    if (!revealed || !mine) return;
+    if (!revealed || !mine || mine.answer === null) return;
     saveCheck(sessionId, {
       activityId: a.id,
       round: mine.round,

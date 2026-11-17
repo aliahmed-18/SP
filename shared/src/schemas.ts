@@ -234,6 +234,8 @@ export const projectSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('blank') }),
   z.object({ kind: z.literal('wrap') }),
   z.object({ kind: z.literal('topic'), id: z.string().uuid() }),
+  /** One Explain answer tagged MISCONCEPTION, shown anonymously (spec C3). */
+  z.object({ kind: z.literal('misconception'), id: z.string().uuid() }),
 ]);
 export type ProjectedItem = z.infer<typeof projectSchema>;
 export const projectPayloadSchema = z.object({ item: projectSchema.nullable() });
@@ -242,3 +244,50 @@ export const launchSchema = activityIdSchema.extend({
   /** Projector: seconds until the question auto-closes (0/absent = no timer). */
   timerSec: z.number().int().min(0).max(600).optional(),
 });
+
+// ─── Explain + Take-away (Phase 6) ──────────────────────────────────────────
+
+export const EXPLAIN_MAX = 200;
+export const TAKEAWAY_LIMITS = { keyPoints: 10, keyPointMax: 300 } as const;
+
+/** Explain draft: a prompt + an optional model answer (never sent to students or the projector). */
+export const explainDraftSchema = z.object({
+  type: z.literal('EXPLAIN'),
+  prompt,
+  modelAnswer: z
+    .string()
+    .trim()
+    .max(ACTIVITY_LIMITS.explanationMax, 'The model answer is too long.')
+    .default(''),
+});
+export type ExplainDraftInput = z.input<typeof explainDraftSchema>;
+
+/** Any new activity: a Quick Check or an Explain. */
+export const activityDraftSchema = z.union([quickCheckDraftSchema, explainDraftSchema]);
+
+/** Wording fixes on an Explain that has run. */
+export const explainTextFixSchema = z.object({
+  prompt,
+  modelAnswer: z.string().trim().max(ACTIVITY_LIMITS.explanationMax).default(''),
+});
+
+export const explainSubmitSchema = z.object({ activityId: z.string().uuid(), text: z.string().max(2000) });
+
+export const EXPLAIN_TAGS = ['CORRECT', 'PARTIAL', 'MISCONCEPTION'] as const;
+export const tagSchema = z.object({ tag: z.enum(EXPLAIN_TAGS).nullable() });
+
+export const takeawaySaveSchema = z.object({
+  keyPoints: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, 'Key points cannot be empty.')
+        .max(TAKEAWAY_LIMITS.keyPointMax, 'A key point is too long.'),
+    )
+    .max(TAKEAWAY_LIMITS.keyPoints, `Up to ${TAKEAWAY_LIMITS.keyPoints} key points.`),
+  topTopicIds: z.array(z.string().uuid()).max(20),
+  /** Fill missing replies from the editor: topicId → reply text (sets the topic to REPLIED). */
+  replies: z.record(z.string().uuid(), z.string().trim().max(2000)).default({}),
+});
+export type TakeawaySaveInput = z.input<typeof takeawaySaveSchema>;

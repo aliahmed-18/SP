@@ -1,6 +1,6 @@
 import type { Activity } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
-import { toPresentActivity, toStudentActivity } from '../src/realtime/dto';
+import { NO_RESULTS, toPresentActivity, toStudentActivity } from '../src/realtime/dto';
 
 const base: Activity = {
   id: '00000000-0000-4000-8000-0000000000aa',
@@ -63,6 +63,8 @@ describe('toStudentActivity (rule 3: no answer leaks)', () => {
   });
 
   it('projector DTO never has modelAnswer', () => {
-    expect(toPresentActivity({ ...base, modelAnswer: 'SECRET' }, [])).not.toHaveProperty('modelAnswer');
+    expect(toPresentActivity({ ...base, modelAnswer: 'SECRET' }, NO_RESULTS)).not.toHaveProperty(
+      'modelAnswer',
+    );
   });
 });

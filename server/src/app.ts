@@ -11,6 +11,7 @@ import { coursesRouter } from './routes/courses';
 import { healthRouter } from './routes/health';
 import { publicRouter } from './routes/public';
 import { qaRouter } from './routes/qa';
+import { takeawayRouter } from './routes/takeaway';
 import { sessionsRouter } from './routes/sessions';
 
 const clientDist = fileURLToPath(new URL('../../client/dist', import.meta.url));
@@ -37,6 +38,7 @@ export function createApp() {
   api.use(publicRouter);
   api.use(qaRouter);
   api.use(activitiesRouter);
+  api.use(takeawayRouter);
   api.use(notFoundApi);
   app.use('/api', api);
 

@@ -108,8 +108,15 @@ export type StudentActivity = {
   closesAt: string | null;
 };
 
-/** This device's answer for the activity's current round (so a refreshed phone shows "Answer sent"). */
-export type MyResponse = { round: number; answer: Answer; confident: boolean | null };
+/**
+ * This device's answer for the activity's current round (so a refreshed phone shows "Answer sent").
+ * Explain: `answer` is null and the text is not echoed back (a stealth-blocked one has no text).
+ */
+export type MyResponse = { round: number; answer: Answer | null; confident: boolean | null };
+
+export type ExplainTag = 'CORRECT' | 'PARTIAL' | 'MISCONCEPTION';
+/** An Explain answer as the instructor sees it: no identity, ever. */
+export type ExplainAnswer = { id: string; text: string; tag: ExplainTag | null };
 
 export type HostActivity = {
   id: string;
@@ -127,10 +134,14 @@ export type HostActivity = {
   closesAt: string | null;
   /** One entry per round played so far (round 1 … current). */
   stats: RoundStats[];
+  /** Explain: answers submitted (incl. ones moderation dropped). */
+  responseCount: number;
+  /** Explain, once closed: the answers with their tags (blocked ones are never stored with text). */
+  explainAnswers: ExplainAnswer[];
 };
 
 /** Projector view: like the host's, minus modelAnswer (and Explain texts, Phase 6). */
-export type PresentActivity = Omit<HostActivity, 'modelAnswer'>;
+export type PresentActivity = Omit<HostActivity, 'modelAnswer' | 'explainAnswers'>;
 
 export type ActivityStats = { activityId: string; round: number; responses: number; joined: number };
 
@@ -144,8 +155,9 @@ export type HostState = {
   liveActivityId: string | null;
   /** The activity "on stage" for phones/projector (LIVE, or just closed/revealed), or null. */
   stageActivityId: string | null;
-  /** Topic currently shown on the projector (so the host can see / stop it), or null. */
+  /** Topic / Explain answer currently shown on the projector (so the host can see / stop it), or null. */
   projectedTopicId: string | null;
+  projectedAnswerId: string | null;
   serverTime: string;
 };
 
@@ -163,7 +175,8 @@ export type ProjectedView =
   | { kind: 'welcome' }
   | { kind: 'blank' }
   | { kind: 'wrap' }
-  | { kind: 'topic'; id: string; topic: ProjectedTopic };
+  | { kind: 'topic'; id: string; topic: ProjectedTopic }
+  | { kind: 'misconception'; id: string; prompt: string; text: string };
 
 export type PresentState = {
   version: number;
@@ -191,3 +204,35 @@ export type StudentState = {
 };
 
 export type PublicSessionInfo = { topic: string; status: SessionStatus };
+
+// ─── Take-away ──────────────────────────────────────────────────────────────
+
+export type TakeawayTopic = {
+  id: string;
+  title: string;
+  meTooCount: number;
+  questionCount: number;
+  status: TopicStatus;
+  reply: string | null;
+};
+
+/** Instructor editor (GET /sessions/:code/takeaway/draft). */
+export type TakeawayDraft = {
+  status: 'DRAFT' | 'PUBLISHED';
+  keyPoints: string[];
+  topTopicIds: string[];
+  /** Every topic of the session, most Me too first, to pick from. */
+  topics: TakeawayTopic[];
+  publishedAt: string | null;
+};
+
+/** What students get (GET /public/sessions/:code/takeaway). */
+export type PublicTakeaway = {
+  sessionId: string;
+  topic: string;
+  endedAt: string;
+  /** endedAt + 24 h: "This page disappears 24 hours after the lecture ends." */
+  expiresAt: string;
+  keyPoints: string[];
+  topics: Omit<TakeawayTopic, 'id' | 'questionCount'>[];
+};

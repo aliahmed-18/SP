@@ -1,10 +1,17 @@
-import { answerSchema, askQuestionSchema, confidenceSchema, meTooSchema } from '@getit/shared';
+import {
+  answerSchema,
+  askQuestionSchema,
+  confidenceSchema,
+  explainSubmitSchema,
+  meTooSchema,
+} from '@getit/shared';
+import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
 import { askQuestion } from '../services/questions';
 import { setMeToo } from '../services/topics';
 import { emitToHost, emitTopicCounts, safeEmit, scheduleStats } from './broadcast';
 import { handle } from './handle';
-import { setConfidence, submitAnswer } from '../services/responses';
+import { setConfidence, submitAnswer, submitExplain } from '../services/responses';
 import type { IoSocket } from './socket';
 
 export function registerStudentHandlers(socket: IoSocket) {
@@ -47,6 +54,29 @@ export function registerStudentHandlers(socket: IoSocket) {
       const { mine, created } = await submitAnswer(sessionId, deviceHash, parsed.data);
       if (created) scheduleStats(sessionId, parsed.data.activityId);
       return mine;
+    }),
+  );
+
+  socket.on(
+    'explain:submit',
+    handle(async (payload: unknown) => {
+      const parsed = explainSubmitSchema.safeParse(payload);
+      if (!parsed.success) throw new HttpError(400, 'VALIDATION', 'Invalid answer.');
+      const r = await submitExplain(sessionId, deviceHash, parsed.data);
+      // Stealth: stored, blocked and duplicate all ack the same `mine` shape.
+      if (r.created) scheduleStats(sessionId, parsed.data.activityId);
+      if (r.blocked && r.flaggedCount !== undefined && r.part) {
+        const s = await prisma.session.findUniqueOrThrow({
+          where: { id: sessionId },
+          select: { version: true },
+        });
+        emitToHost(sessionId, 'qa:flagged', {
+          version: s.version,
+          flaggedCount: r.flaggedCount,
+          part: r.part,
+        });
+      }
+      return r.mine;
     }),
   );
 

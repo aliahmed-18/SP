@@ -35,6 +35,17 @@ export async function setProjected(sessionId: string, item: ProjectedItem | null
     const t = await prisma.topic.findUnique({ where: { id: item.id }, select: { sessionId: true } });
     if (!t || t.sessionId !== sessionId) throw new HttpError(404, 'NOT_FOUND', 'Topic not found.');
   }
+  if (item?.kind === 'misconception') {
+    const r = await prisma.response.findUnique({
+      where: { id: item.id },
+      select: { tag: true, text: true, activity: { select: { sessionId: true } } },
+    });
+    if (!r || r.activity.sessionId !== sessionId || !r.text)
+      throw new HttpError(404, 'NOT_FOUND', 'Answer not found.');
+    if (r.tag !== 'MISCONCEPTION') {
+      throw new HttpError(409, 'NOT_MISCONCEPTION', 'Tag the answer as a misconception first.');
+    }
+  }
   return prisma.$transaction(async (tx) => {
     await tx.session.update({
       where: { id: sessionId },
@@ -48,6 +59,16 @@ export async function setProjected(sessionId: string, item: ProjectedItem | null
 export async function buildProjectedView(json: Prisma.JsonValue | null): Promise<ProjectedView | null> {
   const item = readProjected(json);
   if (!item) return null;
+  if (item.kind === 'misconception') {
+    const r = await prisma.response.findUnique({
+      where: { id: item.id },
+      select: { text: true, tag: true, activity: { select: { prompt: true } } },
+    });
+    // Anonymous by construction: only the prompt and the answer text.
+    return r?.text && r.tag === 'MISCONCEPTION'
+      ? { kind: 'misconception', id: item.id, prompt: r.activity.prompt, text: r.text }
+      : null;
+  }
   if (item.kind !== 'topic') return item;
   const t = await prisma.topic.findUnique({
     where: { id: item.id },

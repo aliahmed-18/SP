@@ -19,9 +19,9 @@ export type RunStep =
   | { type: 'undo'; activityId: string; label: string }
   | { type: 'none'; label: string };
 
-/** Activities the projector can run, in run order (Explain joins in Phase 6). */
+/** Activities the projector can run, in run order. */
 export function runnable(activities: RunActivity[]) {
-  return activities.filter((a) => a.type === 'QUICK_CHECK').sort((a, b) => a.position - b.position);
+  return [...activities].sort((a, b) => a.position - b.position);
 }
 
 export function nextStep(state: RunState, autoReveal: boolean): RunStep {
@@ -30,20 +30,29 @@ export function nextStep(state: RunState, autoReveal: boolean): RunStep {
   const kind = state.projected?.kind;
 
   if (kind === 'wrap') return { type: 'none', label: 'All done' };
-  if (kind === 'blank' || kind === 'topic') return { type: 'project', item: null, label: 'Back' };
+  if (kind === 'blank' || kind === 'topic' || kind === 'misconception') {
+    return { type: 'project', item: null, label: 'Back' };
+  }
   if (kind === 'welcome' && stage && stage.status !== 'REVEALED') {
     return { type: 'project', item: null, label: 'Back to the question' };
   }
 
+  if (stage?.status === 'LIVE' && stage.type === 'EXPLAIN') {
+    return { type: 'close', activityId: stage.id, reveal: false, label: 'Close answers' };
+  }
   if (stage?.status === 'LIVE') {
     return autoReveal
       ? { type: 'close', activityId: stage.id, reveal: true, label: 'Close and show answer' }
       : { type: 'close', activityId: stage.id, reveal: false, label: 'Close question' };
   }
-  if (stage?.status === 'CLOSED') return { type: 'reveal', activityId: stage.id, label: 'Show answer' };
+  // Explain has no answer to reveal: after closing it, move on.
+  if (stage?.status === 'CLOSED' && stage.type === 'QUICK_CHECK') {
+    return { type: 'reveal', activityId: stage.id, label: 'Show answer' };
+  }
 
   const drafts = list.filter((a) => a.status === 'DRAFT');
   const next = (stage ? drafts.find((a) => a.position > stage.position) : undefined) ?? drafts[0];
+  // (a CLOSED Explain or a REVEALED Quick Check falls through to here)
   if (next) {
     const first = list.every((a) => a.status === 'DRAFT');
     return { type: 'launch', activityId: next.id, label: first ? 'Start first activity' : 'Next question' };
@@ -56,7 +65,13 @@ export function nextStep(state: RunState, autoReveal: boolean): RunStep {
 /** ← : step back. Leave an overlay first; otherwise undo the stage activity's last step. */
 export function previousStep(state: RunState): RunStep {
   const kind = state.projected?.kind;
-  if (kind === 'wrap' || kind === 'blank' || kind === 'topic' || kind === 'welcome') {
+  if (
+    kind === 'wrap' ||
+    kind === 'blank' ||
+    kind === 'topic' ||
+    kind === 'misconception' ||
+    kind === 'welcome'
+  ) {
     return { type: 'project', item: null, label: 'Back' };
   }
   const stage = runnable(state.activities).find(

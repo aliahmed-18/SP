@@ -1,10 +1,17 @@
 import { Router, type Response } from 'express';
-import { aiGenerateSchema, codeParamSchema, type AiStatus } from '@getit/shared';
+import { aiGenerateSchema, codeParamSchema, idParamSchema, type AiStatus } from '@getit/shared';
 import { instructorId, requireInstructor } from '../auth/middleware';
 import { HttpError } from '../lib/errors';
 import { FixedWindowLimiter } from '../lib/rateLimit';
 import { parse } from '../lib/validate';
-import { aiEnabled, generateQuickChecks, suggestTopics } from '../services/ai';
+import {
+  aiEnabled,
+  generateQuickChecks,
+  sortExplainAnswers,
+  suggestKeyPoints,
+  suggestTopics,
+} from '../services/ai';
+import { ownedActivity } from '../services/qa-access';
 import { getHostSession } from '../services/sessions';
 
 // Optional AI helpers (docs/03 §AI). Instructor only; they return proposals and change nothing.
@@ -37,4 +44,18 @@ aiRouter.post('/sessions/:code/ai/generate', requireInstructor, async (req, res)
   await getHostSession(instructorId(res), code); // owner only
   assertReady(res);
   res.json(await generateQuickChecks(input));
+});
+
+aiRouter.post('/sessions/:code/ai/keypoints', requireInstructor, async (req, res) => {
+  const { code } = parse(codeParamSchema, req.params);
+  const s = await getHostSession(instructorId(res), code);
+  assertReady(res);
+  res.json(await suggestKeyPoints(s.id, s.topic));
+});
+
+aiRouter.post('/activities/:id/ai/sort', requireInstructor, async (req, res) => {
+  const { id } = parse(idParamSchema, req.params);
+  const a = await ownedActivity(instructorId(res), id);
+  assertReady(res);
+  res.json(await sortExplainAnswers(a));
 });

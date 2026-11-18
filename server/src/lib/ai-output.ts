@@ -1,11 +1,15 @@
 import { z } from 'zod';
 import {
   containsRestrictedWord,
+  EXPLAIN_TAGS,
+  explainDraftSchema,
   LIMITS,
   quickCheckDraftSchema,
+  TAKEAWAY_LIMITS,
+  type AiAnswerGroup,
+  type AiDraft,
+  type AiGenerateKind,
   type AiTopicSuggestion,
-  type QuickCheckDraft,
-  type QuickCheckKind,
 } from '@getit/shared';
 
 // Pure checks on what the AI returns. The server is authoritative (rule 1): AI output is untrusted
@@ -69,34 +73,99 @@ const rawChecks = z.object({
   ),
 });
 
-/** AI questions → Quick Check drafts that pass the same schema as a hand-written one; others dropped. */
-export function toDrafts(raw: unknown, kinds: QuickCheckKind[], count: number): QuickCheckDraft[] {
+/** AI questions → drafts that pass the same schema as hand-written ones; anything else is dropped. */
+export function toDrafts(raw: unknown, kinds: AiGenerateKind[], count: number): AiDraft[] {
   const parsed = rawChecks.safeParse(raw);
   if (!parsed.success) return [];
   const seen = new Set<string>();
-  const out: QuickCheckDraft[] = [];
+  const out: AiDraft[] = [];
   for (const q of parsed.data.questions) {
-    if (!kinds.includes(q.kind as QuickCheckKind)) continue;
-    const base = { type: 'QUICK_CHECK' as const, prompt: q.prompt, explanation: q.explanation };
-    const candidate =
-      q.kind === 'MCQ'
-        ? { ...base, kind: 'MCQ', options: q.options ?? [], correct: q.correctOption }
-        : q.kind === 'TRUE_FALSE'
-          ? { ...base, kind: 'TRUE_FALSE', correct: q.correctTrue }
-          : { ...base, kind: 'NUMERIC', correct: q.correctNumber, tolerance: Math.abs(q.tolerance ?? 0) };
-    const draft = quickCheckDraftSchema.safeParse(candidate);
+    if (!kinds.includes(q.kind as AiGenerateKind)) continue;
+    const draft =
+      q.kind === 'EXPLAIN'
+        ? explainDraftSchema.safeParse({ type: 'EXPLAIN', prompt: q.prompt, modelAnswer: q.explanation })
+        : quickCheckDraftSchema.safeParse(
+            q.kind === 'MCQ'
+              ? {
+                  type: 'QUICK_CHECK',
+                  kind: 'MCQ',
+                  prompt: q.prompt,
+                  explanation: q.explanation,
+                  options: q.options ?? [],
+                  correct: q.correctOption,
+                }
+              : q.kind === 'TRUE_FALSE'
+                ? {
+                    type: 'QUICK_CHECK',
+                    kind: 'TRUE_FALSE',
+                    prompt: q.prompt,
+                    explanation: q.explanation,
+                    correct: q.correctTrue,
+                  }
+                : {
+                    type: 'QUICK_CHECK',
+                    kind: 'NUMERIC',
+                    prompt: q.prompt,
+                    explanation: q.explanation,
+                    correct: q.correctNumber,
+                    tolerance: Math.abs(q.tolerance ?? 0),
+                  },
+          );
     if (!draft.success) continue;
-    const text = [
-      draft.data.prompt,
-      draft.data.explanation,
-      ...('options' in draft.data ? draft.data.options : []),
-    ];
+    const d: AiDraft = draft.data;
+    const text =
+      d.type === 'EXPLAIN'
+        ? [d.prompt, d.modelAnswer]
+        : [d.prompt, d.explanation, ...('options' in d ? d.options : [])];
     if (text.some(containsRestrictedWord)) continue;
-    const key = draft.data.prompt.toLowerCase();
+    const key = d.prompt.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(draft.data);
+    out.push(d);
     if (out.length >= count) break;
+  }
+  return out;
+}
+
+const KEY_POINTS_MAX = 5;
+
+/** Suggested Take-away key points: short, clean, no duplicates, at most 5. */
+export function toKeyPoints(raw: unknown): string[] {
+  const parsed = z.object({ keyPoints: z.array(z.string()) }).safeParse(raw);
+  if (!parsed.success) return [];
+  const out: string[] = [];
+  for (const p of parsed.data.keyPoints) {
+    const t = p.replace(/\s+/g, ' ').trim();
+    if (!t || t.length > TAKEAWAY_LIMITS.keyPointMax || containsRestrictedWord(t)) continue;
+    if (out.some((o) => o.toLowerCase() === t.toLowerCase())) continue;
+    out.push(t);
+    if (out.length >= KEY_POINTS_MAX) break;
+  }
+  return out;
+}
+
+const rawAnswerGroups = z.object({
+  groups: z.array(z.object({ label: z.string(), tag: z.string(), answers: z.array(z.number().int()) })),
+});
+
+/** Explain answers (A1…An) → groups with a valid tag; each answer in at most one group. */
+export function toAnswerGroups(raw: unknown, answers: { id: string }[]): AiAnswerGroup[] {
+  const parsed = rawAnswerGroups.safeParse(raw);
+  if (!parsed.success) return [];
+  const used = new Set<string>();
+  const out: AiAnswerGroup[] = [];
+  for (const g of parsed.data.groups) {
+    const tag = EXPLAIN_TAGS.find((t) => t === g.tag);
+    const label = g.label.replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!tag || !label || containsRestrictedWord(label)) continue;
+    const ids: string[] = [];
+    for (const n of g.answers) {
+      const a = answers[n - 1];
+      if (a && !used.has(a.id) && !ids.includes(a.id)) ids.push(a.id);
+    }
+    if (ids.length === 0) continue;
+    ids.forEach((id) => used.add(id));
+    out.push({ label, tag, answerIds: ids });
   }
   return out;
 }

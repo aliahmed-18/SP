@@ -282,12 +282,22 @@ export const aiGenerateSchema = z.object({
     )
     .max(AI_LIMITS.slideTextMax, `That's too long. Paste up to ${AI_LIMITS.slideTextMax} characters.`),
   count: z.number().int().min(1).max(AI_LIMITS.generateMax).default(5),
+  /** Quick Check kinds and/or EXPLAIN (a written-answer prompt with a model answer). */
   kinds: z
-    .array(z.enum(['MCQ', 'TRUE_FALSE', 'NUMERIC']))
+    .array(z.enum(['MCQ', 'TRUE_FALSE', 'NUMERIC', 'EXPLAIN']))
     .min(1, 'Choose at least one question type.')
     .default(['MCQ', 'TRUE_FALSE']),
+  /** Optional instruction from the lecturer, e.g. "Focus on the main formulas". */
+  note: z
+    .string()
+    .trim()
+    .max(AI_LIMITS.noteMax, `Keep the note under ${AI_LIMITS.noteMax} characters.`)
+    .default(''),
 });
 export type AiGenerateInput = z.input<typeof aiGenerateSchema>;
 
-/** POST /sessions/:code/ai/generate → drafts, each already valid for POST /sessions/:code/activities. */
-export type AiGenerateResult = { drafts: QuickCheckDraft[] };
+export type AiGenerateKind = z.infer<typeof aiGenerateSchema>['kinds'][number];
+/** A generated draft, already valid for POST /sessions/:code/activities. */
+export type AiDraft = QuickCheckDraft | z.infer<typeof explainDraftSchema>;
+/** POST /sessions/:code/ai/generate → drafts to review. */
+export type AiGenerateResult = { drafts: AiDraft[] };

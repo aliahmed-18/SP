@@ -1,9 +1,18 @@
-import { AI_LIMITS, type AiGenerateResult, type AiGroupResult, type QuickCheckKind } from '@getit/shared';
+import type { Activity } from '@prisma/client';
+import {
+  AI_LIMITS,
+  type AiGenerateKind,
+  type AiGenerateResult,
+  type AiGroupResult,
+  type AiKeyPointsResult,
+  type AiSortResult,
+} from '@getit/shared';
 import { prisma } from '../db';
 import { env } from '../env';
-import { toDrafts, toSuggestions } from '../lib/ai-output';
+import { toAnswerGroups, toDrafts, toKeyPoints, toSuggestions } from '../lib/ai-output';
 import { HttpError } from '../lib/errors';
 import { aiFailed, geminiClient, type AiClient } from '../lib/gemini';
+import { statsFor } from './activities';
 
 // AI helpers (stretch phase, docs/06). They only PROPOSE: nothing is written here. The instructor
 // reviews the proposal and applies it through the normal endpoints (which validate + emit as usual).
@@ -93,7 +102,7 @@ const checksSchema = {
       items: {
         type: 'OBJECT',
         properties: {
-          kind: { type: 'STRING', enum: ['MCQ', 'TRUE_FALSE', 'NUMERIC'] },
+          kind: { type: 'STRING', enum: ['MCQ', 'TRUE_FALSE', 'NUMERIC', 'EXPLAIN'] },
           prompt: { type: 'STRING' },
           options: { type: 'ARRAY', items: { type: 'STRING' }, nullable: true },
           correctOption: { type: 'INTEGER', nullable: true },
@@ -109,31 +118,34 @@ const checksSchema = {
   required: ['questions'],
 };
 
-const KIND_RULES: Record<QuickCheckKind, string> = {
+const KIND_RULES: Record<AiGenerateKind, string> = {
   MCQ: 'MCQ: 3 or 4 short options, exactly one correct; wrong options are common misconceptions. Set correctOption (0 = first option).',
   TRUE_FALSE: 'TRUE_FALSE: one clear statement that is either true or false. Set correctTrue.',
   NUMERIC:
     'NUMERIC: a short calculation with one numeric answer. Set correctNumber and tolerance (absolute, e.g. 0.01 for rounding; 0 if exact).',
+  EXPLAIN:
+    'EXPLAIN: an open prompt students answer in one sentence in their own words ("In one sentence: …"). Put a model answer of one sentence in explanation.',
 };
 
-/** Draft Quick Checks from slide text / lecture notes. Returns drafts; the instructor picks and adds them. */
+/** Drafts from slide text / lecture notes. Returns drafts; the instructor picks and adds them. */
 export async function generateQuickChecks(input: {
   text: string;
   count: number;
-  kinds: QuickCheckKind[];
+  kinds: AiGenerateKind[];
+  note: string;
 }): Promise<AiGenerateResult> {
   const raw = await client({
     system:
-      'You write short multiple-choice style checks a university lecturer runs live in class to see whether ' +
-      'students understood. ' +
+      'You write short checks a university lecturer runs live in class to see whether students understood. ' +
       SAFETY,
     prompt: [
-      `Write ${input.count} Quick Check questions on the most important ideas in the lecture material below.`,
+      `Write ${input.count} questions on the most important ideas in the lecture material below.`,
       `Use only these types: ${input.kinds.join(', ')}. Mix them if more than one is allowed.`,
       ...input.kinds.map((k) => `- ${KIND_RULES[k]}`),
       '- Each question tests understanding (not memorising a slide), fits on a phone screen and takes under a minute.',
       '- explanation: 1–2 sentences saying why the answer is right.',
       '- Write in the same language as the material. Never ask about slide numbers, layout or the lecturer.',
+      ...(input.note ? [`- The lecturer asks: ${input.note}`] : []),
       '',
       '<material>',
       input.text,
@@ -144,4 +156,114 @@ export async function generateQuickChecks(input: {
   const drafts = toDrafts(raw, input.kinds, input.count);
   if (drafts.length === 0) throw aiFailed();
   return { drafts };
+}
+
+/**
+ * Take-away key points from what happened in class: the activities (with how the class did) and the
+ * topics students asked about (with the lecturer's replies). The lecturer edits them before publishing.
+ */
+export async function suggestKeyPoints(sessionId: string, topic: string): Promise<AiKeyPointsResult> {
+  const activities = await prisma.activity.findMany({
+    where: { sessionId, status: { not: 'DRAFT' } },
+    orderBy: { position: 'asc' },
+  });
+  const topics = await prisma.topic.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (activities.length === 0 && topics.length === 0)
+    throw new HttpError(400, 'NOTHING_TO_SUMMARISE', 'Run an activity or group some questions first.');
+  const lines: string[] = [];
+  for (const a of activities) lines.push(await describeActivity(a));
+  for (const t of topics)
+    lines.push(
+      `Students asked about "${t.title}" (${t.meTooCount} said "me too")${t.reply ? `; lecturer replied: ${t.reply}` : ''}`,
+    );
+
+  const raw = await client({
+    system: 'You help a university lecturer write the take-away students get after a lecture. ' + SAFETY,
+    prompt: [
+      `Lecture: ${topic}`,
+      'Write 3 to 5 key points students should remember, based on what happened in class below.',
+      '- Each key point is one clear sentence (under 25 words) stating a fact or idea, not an instruction.',
+      '- Favour ideas many students got wrong or asked about.',
+      '- Same language as the lecture content. No names, no numbers of students.',
+      '',
+      '<class>',
+      ...lines,
+      '</class>',
+    ].join('\n'),
+    schema: {
+      type: 'OBJECT',
+      properties: { keyPoints: { type: 'ARRAY', items: { type: 'STRING' } } },
+      required: ['keyPoints'],
+    },
+  });
+  const keyPoints = toKeyPoints(raw);
+  if (keyPoints.length === 0) throw aiFailed();
+  return { keyPoints };
+}
+
+async function describeActivity(a: Activity): Promise<string> {
+  if (a.type === 'EXPLAIN')
+    return `Explain prompt: ${a.prompt}${a.modelAnswer ? ` (model answer: ${a.modelAnswer})` : ''}`;
+  const last = (await statsFor(a)).at(-1);
+  const score = last && last.count > 0 ? `; ${Math.round(last.percentCorrect)}% answered correctly` : '';
+  return `Quick Check: ${a.prompt}${a.explanation ? ` (explanation: ${a.explanation})` : ''}${score}`;
+}
+
+/**
+ * Explain answers → groups of similar answers with a suggested tag, so misconceptions stand out.
+ * Tags are only applied when the lecturer confirms (through the normal tag endpoint).
+ */
+export async function sortExplainAnswers(a: Activity): Promise<AiSortResult> {
+  if (a.type !== 'EXPLAIN' || (a.status !== 'CLOSED' && a.status !== 'REVEALED'))
+    throw new HttpError(409, 'NOT_CLOSED', 'Close the answers first.');
+  const answers = await prisma.response.findMany({
+    where: { activityId: a.id, text: { not: null } },
+    orderBy: { createdAt: 'asc' },
+    take: AI_LIMITS.explainAnswersMax,
+    select: { id: true, text: true },
+  });
+  if (answers.length < AI_LIMITS.explainAnswersMin)
+    throw new HttpError(
+      400,
+      'NOT_ENOUGH_ANSWERS',
+      `Sorting needs at least ${AI_LIMITS.explainAnswersMin} answers.`,
+    );
+  const raw = await client({
+    system: 'You help a university lecturer read anonymous one-sentence answers from students. ' + SAFETY,
+    prompt: [
+      `Prompt students answered: ${a.prompt}`,
+      ...(a.modelAnswer ? [`Lecturer's model answer: ${a.modelAnswer}`] : []),
+      'Group answers that say the same thing. For each group give a short label (what those answers claim, under 12 words)',
+      'and a tag: CORRECT (matches the model answer / is right), PARTIAL (right but incomplete or vague) or MISCONCEPTION (a wrong idea).',
+      'Put each answer in exactly one group. Return answer numbers (A1 = 1).',
+      '',
+      '<answers>',
+      ...answers.map((x, i) => `A${i + 1}: ${x.text}`),
+      '</answers>',
+    ].join('\n'),
+    schema: {
+      type: 'OBJECT',
+      properties: {
+        groups: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              label: { type: 'STRING' },
+              tag: { type: 'STRING', enum: ['CORRECT', 'PARTIAL', 'MISCONCEPTION'] },
+              answers: { type: 'ARRAY', items: { type: 'INTEGER' } },
+            },
+            required: ['label', 'tag', 'answers'],
+          },
+        },
+      },
+      required: ['groups'],
+    },
+  });
+  const groups = toAnswerGroups(raw, answers);
+  if (groups.length === 0) throw aiFailed();
+  return { groups };
 }

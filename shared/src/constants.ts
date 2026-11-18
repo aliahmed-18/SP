@@ -48,4 +48,11 @@ export const AI_LIMITS = {
   /** Grouping looks at the newest ungrouped questions of the current part, up to this many. */
   groupQuestionsMax: 150,
   groupQuestionsMin: 3,
+  /** Uploaded slides / notes: read in the browser (files never reach the server). */
+  filesMax: 8,
+  fileSizeMaxMb: 60,
+  noteMax: 300,
+  /** Sorting Explain answers needs a few to compare. */
+  explainAnswersMin: 3,
+  explainAnswersMax: 300,
 } as const;

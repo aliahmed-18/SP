@@ -244,3 +244,8 @@ export type AiStatus = { enabled: boolean };
 export type AiTopicSuggestion = { title: string; topicId: string | null; questionIds: string[] };
 /** POST /sessions/:code/ai/group → suggestions only; nothing changes until the instructor applies them. */
 export type AiGroupResult = { suggestions: AiTopicSuggestion[] };
+/** POST /sessions/:code/ai/keypoints → suggested Take-away key points (the editor fills them in). */
+export type AiKeyPointsResult = { keyPoints: string[] };
+/** POST /activities/:id/ai/sort → Explain answers in groups with a suggested tag (applied by the instructor). */
+export type AiAnswerGroup = { label: string; tag: ExplainTag; answerIds: string[] };
+export type AiSortResult = { groups: AiAnswerGroup[] };

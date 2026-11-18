@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { FolderInput, Layers, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import type { AiTopicSuggestion, HostState } from '@getit/shared';
+import type { AiTopicSuggestion, HostState, HostTopic } from '@getit/shared';
 import { Spinner } from '@/components/brand/brand';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,12 +14,23 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { ApiRequestError } from '@/lib/api';
+import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { qaApi } from '../qa-api';
 import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
 
 type Row = AiTopicSuggestion & { on: boolean };
+
+/** Undo an AI grouping: delete the topics it created (their questions become ungrouped again). */
+async function undo(created: string[], moved: string[]) {
+  try {
+    for (const id of created) await api(`/topics/${id}`, { method: 'DELETE' });
+    for (const id of moved)
+      await api(`/questions/${id}`, { method: 'PATCH', body: JSON.stringify({ topicId: null }) });
+    toast.success('Grouping undone');
+  } catch (err) {
+    toast.error(err instanceof ApiRequestError ? err.message : "Couldn't undo. Try again.");
+  }
+}
 
 /**
  * "Group with AI" (MVP: Classify): the AI proposes topics for the ungrouped questions of the current
@@ -60,18 +71,42 @@ export function AiGroupDialog({
 
   async function apply() {
     setApplying(true);
-    let done = 0;
-    for (const r of chosen) {
-      const ok = r.topicId
-        ? await qaApi.moveToTopic(r.topicId, r.questionIds)
-        : await qaApi.createTopic(code, r.title.trim(), r.questionIds);
-      if (ok) done++;
+    const created: string[] = [];
+    const moved: string[] = [];
+    try {
+      for (const r of chosen) {
+        if (r.topicId) {
+          await api(`/topics/${r.topicId}/questions`, {
+            method: 'POST',
+            body: JSON.stringify({ questionIds: r.questionIds }),
+          });
+          moved.push(...r.questionIds);
+        } else {
+          const t = await api<HostTopic>(`/sessions/${code}/topics`, {
+            method: 'POST',
+            body: JSON.stringify({ title: r.title.trim(), questionIds: r.questionIds }),
+          });
+          created.push(t.id);
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Something went wrong. Try again.');
     }
     setApplying(false);
-    if (done > 0) {
-      toast.success(done === 1 ? '1 topic updated' : `${done} topics updated`);
-      onOpenChange(false);
-    }
+    const done = created.length + (moved.length ? 1 : 0);
+    if (done === 0) return;
+    // MVP: "The AI groups them by topic at once, and you can undo."
+    const message =
+      created.length === 0
+        ? 'Questions added to topics'
+        : created.length === 1
+          ? '1 topic created'
+          : `${created.length} topics created`;
+    toast.success(message, {
+      duration: 10_000,
+      action: { label: 'Undo', onClick: () => void undo(created, moved) },
+    });
+    onOpenChange(false);
   }
 
   const error = suggest.error instanceof ApiRequestError ? suggest.error.message : 'Something went wrong.';

@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Sparkles } from 'lucide-react';
+import { ArrowLeft, MessageSquareText, Plus, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { AI_LIMITS, answerLabel, type QuickCheckDraft, type QuickCheckKind } from '@getit/shared';
+import { AI_LIMITS, type AiDraft, type AiGenerateKind } from '@getit/shared';
 import { Spinner } from '@/components/brand/brand';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,19 +13,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { KIND_ICON, KIND_LABEL } from '../activities/kinds';
 import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
+import { AiDraftCard } from './AiDraftCard';
+import { AiSourceFields } from './AiSourceFields';
+import { sourceText, type SourceFile } from './source-text';
 
-const KINDS: QuickCheckKind[] = ['MCQ', 'TRUE_FALSE', 'NUMERIC'];
+const KINDS: { kind: AiGenerateKind; label: string; Icon: typeof Sparkles }[] = [
+  { kind: 'MCQ', label: KIND_LABEL.MCQ, Icon: KIND_ICON.MCQ },
+  { kind: 'TRUE_FALSE', label: KIND_LABEL.TRUE_FALSE, Icon: KIND_ICON.TRUE_FALSE },
+  { kind: 'NUMERIC', label: KIND_LABEL.NUMERIC, Icon: KIND_ICON.NUMERIC },
+  { kind: 'EXPLAIN', label: 'Explain', Icon: MessageSquareText },
+];
 const COUNTS = [3, 5, 8] as const;
 
 /**
- * "AI generation" (MVP): paste slide text or notes → Quick Check drafts to review. Ticked drafts are added
- * to the activities list as DRAFT (never launched), where the instructor can edit them like any other.
+ * "AI generation" (MVP: Prepare from slides): upload slides / notes or paste text → drafts to review
+ * (Quick Checks and Explain prompts). Ticked drafts are added to the activities list as DRAFT — never
+ * launched — where the instructor can edit them like any other activity.
  */
 export function AiGenerateDialog({
   code,
@@ -37,25 +43,29 @@ export function AiGenerateDialog({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
-  // Kept while the dialog is closed, so "Back" or reopening doesn't lose a long paste.
-  const [text, setText] = useState('');
+  // Kept while the dialog is closed, so "Back" or reopening doesn't lose uploads or a long paste.
+  const [files, setFiles] = useState<SourceFile[]>([]);
+  const [pasted, setPasted] = useState('');
+  const [note, setNote] = useState('');
   const [count, setCount] = useState<number>(5);
-  const [kinds, setKinds] = useState<QuickCheckKind[]>(['MCQ', 'TRUE_FALSE']);
-  const [drafts, setDrafts] = useState<(QuickCheckDraft & { on: boolean })[] | null>(null);
+  const [kinds, setKinds] = useState<AiGenerateKind[]>(['MCQ', 'TRUE_FALSE']);
+  const [drafts, setDrafts] = useState<{ draft: AiDraft; on: boolean }[] | null>(null);
   const [adding, setAdding] = useState(false);
-  const gen = useMutation({
-    mutationFn: () => aiApi.generate(code, { text, count, kinds }),
-    onSuccess: (r) => setDrafts(r.drafts.map((d) => ({ ...d, on: true }))),
-  });
 
-  const length = text.trim().length;
-  const tooShort = length < AI_LIMITS.slideTextMin;
+  const text = sourceText(files, pasted);
+  const reading = files.some((f) => f.text === null && !f.error);
+  const tooShort = text.length < AI_LIMITS.slideTextMin;
+  const tooLong = text.length > AI_LIMITS.slideTextMax;
+  const gen = useMutation({
+    mutationFn: () => aiApi.generate(code, { text, count, kinds, note }),
+    onSuccess: (r) => setDrafts(r.drafts.map((draft) => ({ draft, on: true }))),
+  });
   const chosen = drafts?.filter((d) => d.on) ?? [];
 
   async function add() {
     setAdding(true);
     let added = 0;
-    for (const { on: _on, ...draft } of chosen) {
+    for (const { draft } of chosen) {
       try {
         await api(`/sessions/${code}/activities`, { method: 'POST', body: JSON.stringify(draft) });
         added++;
@@ -74,13 +84,20 @@ export function AiGenerateDialog({
     }
   }
 
+  let hint: string | null = null;
+  if (reading) hint = 'Reading your files…';
+  else if (tooLong)
+    hint = `That's too much text (${text.length.toLocaleString('en')} characters, max ${AI_LIMITS.slideTextMax.toLocaleString('en')}). Remove a file or upload a shorter one.`;
+  else if (tooShort && (files.length || pasted))
+    hint = `Add a bit more material (at least ${AI_LIMITS.slideTextMin} characters).`;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>AI generation</DialogTitle>
           <DialogDescription>
-            Paste your slide text or lecture notes. You get Quick Check drafts to review; nothing reaches
+            Upload your slides or notes and get Quick Checks and Explain prompts to review. Nothing reaches
             students until you launch it.
           </DialogDescription>
         </DialogHeader>
@@ -92,100 +109,57 @@ export function AiGenerateDialog({
             <p className="text-sm text-muted-foreground">This can take up to 20 seconds.</p>
           </div>
         ) : drafts ? (
-          <ul className="flex max-h-[55vh] flex-col gap-3 overflow-y-auto pr-1" data-testid="ai-drafts">
-            {drafts.map((d, i) => {
-              const Icon = KIND_ICON[d.kind];
-              return (
-                <li
-                  key={i}
-                  className={cn(
-                    'flex gap-3 rounded-xl border p-3',
-                    d.on ? 'border-primary/40 bg-accent/40' : 'opacity-60',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={d.on}
-                    onChange={(e) =>
-                      setDrafts((prev) => prev!.map((x, j) => (j === i ? { ...x, on: e.target.checked } : x)))
-                    }
-                    className="mt-1 size-5 shrink-0 accent-primary"
-                    aria-label={`Use draft: ${d.prompt}`}
-                  />
-                  <div className="min-w-0 flex-1 text-sm">
-                    <Badge variant="accent" className="mb-1">
-                      <Icon aria-hidden /> {KIND_LABEL[d.kind]}
-                    </Badge>
-                    <p className="font-medium" dir="auto">
-                      {d.prompt}
-                    </p>
-                    {d.kind === 'MCQ' ? (
-                      <ul className="mt-1">
-                        {d.options.map((o, j) => (
-                          <li
-                            key={j}
-                            dir="auto"
-                            className={cn(
-                              j === d.correct ? 'font-semibold text-correct' : 'text-muted-foreground',
-                            )}
-                          >
-                            {j === d.correct ? '✓' : '·'} {answerLabel('MCQ', d.options, j)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 font-semibold text-correct">
-                        ✓{' '}
-                        {d.kind === 'NUMERIC'
-                          ? `${d.correct}${d.tolerance ? ` ± ${d.tolerance}` : ''}`
-                          : answerLabel('TRUE_FALSE', [], d.correct)}
-                      </p>
-                    )}
-                    <p className="mt-1 text-muted-foreground" dir="auto">
-                      {d.explanation}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
+          <ul className="flex flex-col gap-3" data-testid="ai-drafts">
+            {drafts.map(({ draft, on }, i) => (
+              <li
+                key={i}
+                className={cn(
+                  'flex gap-3 rounded-xl border p-3',
+                  on ? 'border-primary/40 bg-accent/40' : 'opacity-60',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={(e) =>
+                    setDrafts((prev) => prev!.map((x, j) => (j === i ? { ...x, on: e.target.checked } : x)))
+                  }
+                  className="mt-1 size-5 shrink-0 accent-primary"
+                  aria-label={`Use draft: ${draft.prompt}`}
+                />
+                <AiDraftCard draft={draft} />
+              </li>
+            ))}
           </ul>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ai-text">Slide text or lecture notes</Label>
-              <Textarea
-                id="ai-text"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                maxLength={AI_LIMITS.slideTextMax}
-                rows={8}
-                dir="auto"
-                placeholder="Copy the text from your slides (Ctrl + A, Ctrl + C in PowerPoint's outline view) and paste it here."
-                className="max-h-72"
-              />
-              <p className="text-xs text-muted-foreground">
-                {length.toLocaleString('en')} / {AI_LIMITS.slideTextMax.toLocaleString('en')} characters
-                {tooShort && ` · at least ${AI_LIMITS.slideTextMin}`}
-              </p>
-            </div>
+            <AiSourceFields
+              files={files}
+              setFiles={setFiles}
+              pasted={pasted}
+              setPasted={setPasted}
+              note={note}
+              setNote={setNote}
+            />
             <fieldset className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium">Question types</legend>
+              <legend className="mb-2 text-sm font-medium">Draft types</legend>
               <div className="flex flex-wrap gap-2">
-                {KINDS.map((k) => {
-                  const on = kinds.includes(k);
-                  const Icon = KIND_ICON[k];
+                {KINDS.map(({ kind, label, Icon }) => {
+                  const on = kinds.includes(kind);
                   return (
                     <button
-                      key={k}
+                      key={kind}
                       type="button"
                       aria-pressed={on}
-                      onClick={() => setKinds((prev) => (on ? prev.filter((x) => x !== k) : [...prev, k]))}
+                      onClick={() =>
+                        setKinds((prev) => (on ? prev.filter((x) => x !== kind) : [...prev, kind]))
+                      }
                       className={cn(
                         'flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm font-medium',
                         on && 'border-primary bg-accent text-accent-foreground ring-1 ring-primary',
                       )}
                     >
-                      <Icon className="size-4" aria-hidden /> {KIND_LABEL[k]}
+                      <Icon className="size-4" aria-hidden /> {label}
                     </button>
                   );
                 })}
@@ -210,20 +184,27 @@ export function AiGenerateDialog({
                 ))}
               </div>
             </fieldset>
+            {hint && (
+              <p className="text-sm text-muted-foreground" data-testid="ai-hint">
+                {hint}
+              </p>
+            )}
             {gen.isError && (
               <p
                 className="rounded-lg border border-destructive/40 p-3 text-sm"
                 role="alert"
                 data-testid="ai-error"
               >
-                {gen.error instanceof ApiRequestError ? gen.error.message : 'Something went wrong.'} You can
-                still write activities by hand.
+                {gen.error instanceof ApiRequestError ? gen.error.message : 'Something went wrong.'} Your
+                files are kept. You can still write activities by hand.
               </p>
             )}
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground">{AI_PRIVACY_NOTE}</p>
+        <p className="text-xs text-muted-foreground">
+          Files are read on this computer; only their text is sent. {AI_PRIVACY_NOTE}
+        </p>
         <DialogFooter>
           {drafts ? (
             <>
@@ -237,7 +218,7 @@ export function AiGenerateDialog({
           ) : (
             <Button
               onClick={() => gen.mutate()}
-              disabled={tooShort || kinds.length === 0 || gen.isPending}
+              disabled={tooShort || tooLong || reading || kinds.length === 0 || gen.isPending}
               data-testid="ai-generate"
             >
               <Sparkles /> Generate drafts

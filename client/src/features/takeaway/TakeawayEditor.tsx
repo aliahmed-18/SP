@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, CircleCheck, Plus, Send, Trash2, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, CircleCheck, Plus, Send, Sparkles, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { TAKEAWAY_LIMITS, takeawaySaveSchema, type TakeawayDraft } from '@getit/shared';
 import { Spinner } from '@/components/brand/brand';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { aiApi, useAiEnabled } from '@/features/session-instructor/ai/ai-api';
 import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +56,19 @@ function EditorForm({
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
   const published = draft.status === 'PUBLISHED';
+  const aiEnabled = useAiEnabled();
+
+  // "AI draft key points" (MVP): suggestions from what happened in class, merged into the list to edit.
+  const aiPoints = useMutation({
+    mutationFn: () => aiApi.keyPoints(code),
+    onSuccess: ({ keyPoints }) => {
+      const kept = points.map((p) => p.trim()).filter(Boolean);
+      const fresh = keyPoints.filter((k) => !kept.some((p) => p.toLowerCase() === k.toLowerCase()));
+      setPoints([...kept, ...fresh].slice(0, TAKEAWAY_LIMITS.keyPoints));
+      toast.success('Key points drafted. Edit them before you publish.');
+    },
+    onError: (err) => toast.error(err instanceof ApiRequestError ? err.message : 'Something went wrong.'),
+  });
 
   const body = () => ({
     keyPoints: points.map((p) => p.trim()).filter(Boolean),
@@ -172,6 +186,24 @@ function EditorForm({
           >
             <Plus className="size-4" /> Add key point
           </button>
+        )}
+        {aiEnabled && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => aiPoints.mutate()}
+            disabled={
+              aiPoints.isPending || points.filter((p) => p.trim()).length >= TAKEAWAY_LIMITS.keyPoints
+            }
+            className="self-start border-primary/40"
+          >
+            {aiPoints.isPending ? (
+              <Spinner decorative className="!size-4" />
+            ) : (
+              <Sparkles className="text-attention" />
+            )}
+            {aiPoints.isPending ? 'Drafting key points…' : 'AI draft key points'}
+          </Button>
         )}
       </fieldset>
 

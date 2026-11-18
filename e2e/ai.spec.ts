@@ -80,7 +80,7 @@ test('AI generation: paste slides → pick drafts → added as drafts, nothing l
   await page.getByRole('button', { name: 'AI generation' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByTestId('ai-generate')).toBeDisabled(); // nothing pasted yet
-  await dialog.getByLabel('Slide text or lecture notes').fill(SLIDES);
+  await dialog.getByLabel('Or paste slide text or notes').fill(SLIDES);
   await dialog.getByRole('button', { name: '3', exact: true }).click();
   await dialog.getByTestId('ai-generate').click();
   await expect(dialog.getByTestId('ai-drafts')).toContainText('Change in y per unit of x');
@@ -107,10 +107,10 @@ test('AI failure is a readable message and the manual flow stays', async ({ page
   );
   await page.getByRole('button', { name: 'AI generation' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Slide text or lecture notes').fill(SLIDES);
+  await dialog.getByLabel('Or paste slide text or notes').fill(SLIDES);
   await dialog.getByTestId('ai-generate').click();
   await expect(dialog.getByTestId('ai-error')).toContainText('The AI took too long');
-  await expect(dialog.getByLabel('Slide text or lecture notes')).toHaveValue(SLIDES); // paste kept
+  await expect(dialog.getByLabel('Or paste slide text or notes')).toHaveValue(SLIDES); // paste kept
   await page.keyboard.press('Escape');
   await page
     .getByRole('button', { name: /Multiple choice/ })

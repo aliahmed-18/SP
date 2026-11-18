@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import type { AiGenerateInput, AiGenerateResult, AiGroupResult, AiStatus } from '@getit/shared';
+import type {
+  AiGenerateInput,
+  AiGenerateResult,
+  AiGroupResult,
+  AiKeyPointsResult,
+  AiSortResult,
+  AiStatus,
+} from '@getit/shared';
 import { api } from '@/lib/api';
 
 /** Whether the server has an AI key. Without one the AI buttons stay hidden (manual flow only). */
@@ -14,6 +21,9 @@ export function useAiEnabled() {
 }
 
 export const aiApi = {
+  keyPoints: (code: string) => api<AiKeyPointsResult>(`/sessions/${code}/ai/keypoints`, { method: 'POST' }),
+  sortAnswers: (activityId: string) =>
+    api<AiSortResult>(`/activities/${activityId}/ai/sort`, { method: 'POST' }),
   group: (code: string) => api<AiGroupResult>(`/sessions/${code}/ai/group`, { method: 'POST' }),
   generate: (code: string, input: AiGenerateInput) =>
     api<AiGenerateResult>(`/sessions/${code}/ai/generate`, { method: 'POST', body: JSON.stringify(input) }),

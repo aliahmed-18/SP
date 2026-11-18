@@ -67,7 +67,9 @@ Instructor only. They **propose**; nothing is written until the instructor appli
 |---|---|---|
 | GET | `/ai/status` | `{ enabled }` |
 | POST | `/sessions/:code/ai/group` | `{ suggestions: { title, topicId \| null, questionIds }[] }` for the current part's ungrouped questions (needs ≥ 3). `topicId` = add to that existing topic |
-| POST | `/sessions/:code/ai/generate` | body `{ text (200–30 000 chars), count 1–8, kinds }` → `{ drafts }`, each valid for `POST /sessions/:code/activities` |
+| POST | `/sessions/:code/ai/generate` | body `{ text (200–30 000 chars), count 1–8, kinds (MCQ / TRUE_FALSE / NUMERIC / EXPLAIN), note? (≤ 300) }` → `{ drafts }`, each valid for `POST /sessions/:code/activities`. Uploaded slides (PDF, .pptx incl. speaker notes, .docx, HTML, text; ≤ 8 files, ≤ 60 MB each) are read **in the browser** — files never reach the server, only their text |
+| POST | `/sessions/:code/ai/keypoints` | `{ keyPoints }` (≤ 5) from what happened in class (activities + how the class did, topics + replies); the Take-away editor fills them in, the instructor edits and publishes |
+| POST | `/activities/:id/ai/sort` | Closed Explain with ≥ 3 answers → `{ groups: { label, tag, answerIds }[] }`; tags are applied only when the instructor confirms (normal tag endpoint) |
 
 ## Health
 | GET | `/health` | `{ ok: true, db: true }` — used by the hosting platform and before the demo |

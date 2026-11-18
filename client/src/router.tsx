@@ -23,6 +23,10 @@ const PresentPage = lazy(() =>
   import('@/features/present/PresentPage').then((m) => ({ default: m.PresentPage })),
 );
 
+const ReportPage = lazy(() =>
+  import('@/features/report/ReportPage').then((m) => ({ default: m.ReportPage })),
+);
+
 const page = (node: ReactNode) => <Suspense fallback={<LoadingState />}>{node}</Suspense>;
 const instructor = (node: ReactNode) => page(<RequireAuth>{node}</RequireAuth>);
 
@@ -38,6 +42,7 @@ export const router = createBrowserRouter([
       { path: '/s/:code', element: <StudentPage /> },
       { path: '/s/:code/host', element: instructor(<HostPage />) },
       { path: '/s/:code/present', element: instructor(<PresentPage />) },
+      { path: '/s/:code/report', element: instructor(<ReportPage />) },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

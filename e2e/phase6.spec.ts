@@ -128,11 +128,26 @@ test('End → Take-away editor → phones get it with their own review → image
   expect(png.suggestedFilename()).toBe(`getit-takeaway-${code}.png`);
 
   // Instructor: Download results → .xlsx.
+  await page.getByRole('button', { name: /Download results/ }).click();
   const [xlsx] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('link', { name: 'Download results' }).click(),
+    page.getByRole('menuitem', { name: /Excel workbook/ }).click(),
   ]);
   expect(xlsx.suggestedFilename()).toMatch(
     /^getit-linear-regression-and-correlation-\d{4}-\d{2}-\d{2}\.xlsx$/,
   );
+
+  // Download results → PDF report: a print-ready page (Save as PDF) with the session's results.
+  await page.getByRole('button', { name: /Download results/ }).click();
+  const [report] = await Promise.all([
+    page.context().waitForEvent('page'),
+    page.getByRole('menuitem', { name: /PDF report/ }).click(),
+  ]);
+  const doc = report.getByTestId('report');
+  await expect(doc).toContainText('Linear regression and correlation');
+  await expect(doc).toContainText('Correlation is not causation.');
+  await expect(doc.getByTestId('report-quick-check')).toContainText('0% correct');
+  await expect(doc).toContainText('Computing the slope');
+  await expect(doc).toContainText('Use b = Sxy / Sxx.');
+  await expect(report).toHaveTitle(/^getit-report-linear-regression-and-correlation-/);
 });

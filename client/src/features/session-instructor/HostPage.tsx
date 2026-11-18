@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { CircleStop, Download, LayoutList, MessagesSquare, Play, Plus } from 'lucide-react';
+import {
+  ChevronDown,
+  CircleStop,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  LayoutList,
+  MessagesSquare,
+  Play,
+  Plus,
+} from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { normalizeJoinCode, type HostState } from '@getit/shared';
@@ -9,7 +19,12 @@ import { ErrorState } from '@/components/layout/ErrorState';
 import { ReconnectingBanner } from '@/components/layout/ReconnectingBanner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { UserMenu } from '@/features/auth/UserMenu';
 import { TakeawayEditor } from '@/features/takeaway/TakeawayEditor';
 import { api, ApiRequestError } from '@/lib/api';
@@ -96,11 +111,7 @@ export function HostPage() {
                 <strong>Ended.</strong> Students now see that the lecture has ended. This session stays in
                 your dashboard.
               </p>
-              <Button asChild size="sm">
-                <a href={`/api/sessions/${session.id}/export.xlsx`} download>
-                  <Download /> Download results
-                </a>
-              </Button>
+              <DownloadResults sessionId={session.id} code={session.code} />
               <Button asChild variant="outline" size="sm">
                 <Link to="/dashboard">
                   <Plus /> Start a new session
@@ -230,5 +241,38 @@ function HostViewTabs({
         ))}
       </div>
     </div>
+  );
+}
+
+/** Shot 09 / MVP: "Download results" → PDF report (to read, print or share) or Excel workbook (all the data). */
+function DownloadResults({ sessionId, code }: { sessionId: string; code: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm">
+          <Download /> Download results <ChevronDown />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuItem asChild>
+          <a href={`/s/${code}/report?print=1`} target="_blank" rel="noopener" className="items-start">
+            <FileText className="mt-0.5" />
+            <span className="flex flex-col">
+              <span className="font-medium">PDF report</span>
+              <span className="text-xs text-muted-foreground">To read, print or share</span>
+            </span>
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href={`/api/sessions/${sessionId}/export.xlsx`} download className="items-start">
+            <FileSpreadsheet className="mt-0.5" />
+            <span className="flex flex-col">
+              <span className="font-medium">Excel workbook</span>
+              <span className="text-xs text-muted-foreground">All the data, to sort and filter</span>
+            </span>
+          </a>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

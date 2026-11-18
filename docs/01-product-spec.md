@@ -91,7 +91,7 @@ Opened in a new window; full screen; large type (titles â‰¥ 32 px, key numbers â
 
 ## G. Export (instructor)
 - Excel (.xlsx) with sheets: Questions (part, time, text, topic, addressed), Topics (title, me-too, status, reply), Quick Checks (question, round, responses, % correct, sure-wrong, distribution), Explain (prompt, answers, tags). No identities.
-- PDF export is nice-to-have only.
+- PDF report (done): "Download results" offers **PDF report** (a print-ready page at `/s/:code/report`, saved with the browser's *Save as PDF*, so Arabic text renders correctly) and **Excel workbook**. Same data as the host view; no identities.
 
 ## H. Limits & numbers (use these exact values)
 | Thing | Limit |

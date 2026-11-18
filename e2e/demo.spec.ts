@@ -155,9 +155,10 @@ test('the demo, start to finish', async ({ page, context, browser }) => {
   expect(png.suggestedFilename()).toMatch(/\.png$/);
 
   // 7. Dashboard + Excel.
+  await page.getByRole('button', { name: /Download results/ }).click();
   const [xlsx] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('link', { name: 'Download results' }).click(),
+    page.getByRole('menuitem', { name: /Excel workbook/ }).click(),
   ]);
   expect(xlsx.suggestedFilename()).toMatch(/\.xlsx$/);
   await page.goto('/dashboard');

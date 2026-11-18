@@ -236,3 +236,11 @@ export type PublicTakeaway = {
   keyPoints: string[];
   topics: Omit<TakeawayTopic, 'id' | 'questionCount'>[];
 };
+
+// ─── AI helpers (stretch) ───────────────────────────────────────────────────
+/** GET /ai/status: whether the server has an AI key (the buttons are hidden otherwise). */
+export type AiStatus = { enabled: boolean };
+/** One suggested topic: a new one (topicId null) or questions to add to an existing topic. */
+export type AiTopicSuggestion = { title: string; topicId: string | null; questionIds: string[] };
+/** POST /sessions/:code/ai/group → suggestions only; nothing changes until the instructor applies them. */
+export type AiGroupResult = { suggestions: AiTopicSuggestion[] };

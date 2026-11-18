@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Copy, ListChecks, MessageSquareText } from 'lucide-react';
+import { Copy, ListChecks, MessageSquareText, Sparkles } from 'lucide-react';
 import type { ActivityStats, HostActivity, HostState, QuickCheckKind } from '@getit/shared';
 import { Button } from '@/components/ui/button';
 import type { GetitSocket } from '@/lib/socket';
+import { AiGenerateDialog } from '../ai/AiGenerateDialog';
+import { useAiEnabled } from '../ai/ai-api';
 import { activitiesApi } from './activities-api';
 import { ActivityEditorDialog, type EditorTarget } from './ActivityEditorDialog';
 import { ActivityRow } from './ActivityRow';
@@ -26,6 +28,8 @@ export function ActivitiesSection({
   const ended = session.status === 'ENDED';
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const aiEnabled = useAiEnabled();
   const [explainEditor, setExplainEditor] = useState<{ activity?: HostActivity } | null>(null);
 
   const move = (index: number, dir: -1 | 1) => {
@@ -44,9 +48,21 @@ export function ActivitiesSection({
             <h2 id="setup-title" className="text-xl font-semibold">
               Set up activities
             </h2>
-            <Button variant="outline" size="sm" onClick={() => setCopyOpen(true)}>
-              <Copy /> Copy from an earlier session
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {aiEnabled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAiOpen(true)}
+                  className="border-primary/40"
+                >
+                  <Sparkles className="text-attention" /> AI generation
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setCopyOpen(true)}>
+                <Copy /> Copy from an earlier session
+              </Button>
+            </div>
           </div>
           <p className="text-sm font-medium text-primary">Assess</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -129,6 +145,7 @@ export function ActivitiesSection({
         target={explainEditor}
         onClose={() => setExplainEditor(null)}
       />
+      {aiEnabled && <AiGenerateDialog code={session.code} open={aiOpen} onOpenChange={setAiOpen} />}
       <CopyActivitiesDialog
         code={session.code}
         sessionId={session.id}

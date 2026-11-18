@@ -39,3 +39,13 @@ export const EXPLAIN_MAX = 200;
 export const TAKEAWAY_LIMITS = { keyPoints: 10, keyPointMax: 300 } as const;
 
 export const EXPLAIN_TAGS = ['CORRECT', 'PARTIAL', 'MISCONCEPTION'] as const;
+
+/** Optional AI helpers (stretch phase): drafts only, the instructor always reviews them. */
+export const AI_LIMITS = {
+  slideTextMin: 200,
+  slideTextMax: 30_000,
+  generateMax: 8,
+  /** Grouping looks at the newest ungrouped questions of the current part, up to this many. */
+  groupQuestionsMax: 150,
+  groupQuestionsMin: 3,
+} as const;

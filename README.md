@@ -39,6 +39,7 @@ Start a session, then join from a phone or a second browser window with the code
 
 - `npm run db:migrate` creates the tables in the `getit` database. Docker also creates a `getit_test` database for the tests.
 - `npm run db:seed` adds the demo data: instructor, course "ITCS 444 — Mobile Development" and one ended lecture with questions, topics, results and a Take-away. Safe to run again.
+- **AI helpers (optional):** put a free Gemini key from [Google AI Studio](https://aistudio.google.com) in `GEMINI_API_KEY` in `.env` and restart. Then "Group with AI" (Q&A) and "AI generation" (activities) appear. Without a key they stay hidden and everything else works.
 - No Docker? Any local PostgreSQL 16 works. Create a `getit` user (password `getit`) that owns the databases `getit` and `getit_test`.
 - Already ran Docker before `server/prisma/init-test-db.sql` existed? Run `docker compose exec db createdb -U getit getit_test` once.
 

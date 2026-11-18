@@ -13,7 +13,9 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   DEVICE_SALT: z.string().min(16, 'DEVICE_SALT must be at least 16 characters'),
   CLIENT_ORIGIN: z.string().url().default('http://localhost:5173'),
-  GEMINI_API_KEY: z.string().optional(),
+  /** Optional (stretch): enables the AI helpers. Empty = AI buttons hidden, everything else works. */
+  GEMINI_API_KEY: z.string().trim().optional(),
+  GEMINI_MODEL: z.string().trim().min(1).default('gemini-2.5-flash'),
 });
 
 export type Env = z.infer<typeof envSchema>;

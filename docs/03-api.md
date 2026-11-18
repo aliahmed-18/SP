@@ -61,5 +61,13 @@ Student live actions (ask, answer, me-too, confidence, explain) go through Socke
 
 Code lookup (codes are reused after a session ends): students get the LIVE session with that code, else the newest ENDED one that ended < 24 h ago; instructors get their own session with that code, LIVE first, else the most recent.
 
+## AI helpers (optional, stretch — docs/06)
+Instructor only. They **propose**; nothing is written until the instructor applies the proposal through the normal endpoints above (which validate and emit as usual). Only question / slide text is sent to Gemini — never a device hash or identity. No `GEMINI_API_KEY` → `/ai/status` says `enabled: false`, the buttons are hidden, the rest returns `503 AI_OFF`. 20 requests per instructor per 10 min. AI output is untrusted input: re-validated with the shared schemas, unknown ids / invalid drafts / restricted words dropped. Gemini errors: `504 AI_TIMEOUT` (20 s), `429 AI_BUSY` (free limit), `502 AI_FAILED` — each message says the manual flow still works.
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/ai/status` | `{ enabled }` |
+| POST | `/sessions/:code/ai/group` | `{ suggestions: { title, topicId \| null, questionIds }[] }` for the current part's ungrouped questions (needs ≥ 3). `topicId` = add to that existing topic |
+| POST | `/sessions/:code/ai/generate` | body `{ text (200–30 000 chars), count 1–8, kinds }` → `{ drafts }`, each valid for `POST /sessions/:code/activities` |
+
 ## Health
 | GET | `/health` | `{ ok: true, db: true }` — used by the hosting platform and before the demo |

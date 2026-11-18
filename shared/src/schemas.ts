@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { CODE_REGEX, normalizeJoinCode } from './codes';
-import { ACTIVITY_LIMITS, EXPLAIN_TAGS, INVALID_CODE_MESSAGE, LIMITS, TAKEAWAY_LIMITS } from './constants';
+import {
+  ACTIVITY_LIMITS,
+  AI_LIMITS,
+  EXPLAIN_TAGS,
+  INVALID_CODE_MESSAGE,
+  LIMITS,
+  TAKEAWAY_LIMITS,
+} from './constants';
 
 // Plain constants live in constants.ts (no zod), so phones don't download zod just to read a limit.
 export * from './constants';
@@ -262,3 +269,25 @@ export const takeawaySaveSchema = z.object({
   replies: z.record(z.string().uuid(), z.string().trim().max(2000)).default({}),
 });
 export type TakeawaySaveInput = z.input<typeof takeawaySaveSchema>;
+
+// ─── AI helpers (stretch) ───────────────────────────────────────────────────
+
+export const aiGenerateSchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(
+      AI_LIMITS.slideTextMin,
+      `Paste a bit more of your slides or notes (at least ${AI_LIMITS.slideTextMin} characters).`,
+    )
+    .max(AI_LIMITS.slideTextMax, `That's too long. Paste up to ${AI_LIMITS.slideTextMax} characters.`),
+  count: z.number().int().min(1).max(AI_LIMITS.generateMax).default(5),
+  kinds: z
+    .array(z.enum(['MCQ', 'TRUE_FALSE', 'NUMERIC']))
+    .min(1, 'Choose at least one question type.')
+    .default(['MCQ', 'TRUE_FALSE']),
+});
+export type AiGenerateInput = z.input<typeof aiGenerateSchema>;
+
+/** POST /sessions/:code/ai/generate → drafts, each already valid for POST /sessions/:code/activities. */
+export type AiGenerateResult = { drafts: QuickCheckDraft[] };

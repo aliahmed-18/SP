@@ -188,6 +188,7 @@ model Activity {
   round       Int             @default(1)
   closesAt    DateTime? // Phase 0: server-side timer; the activity auto-closes at this time (null = no timer)
   position    Int // run order in the activities list
+  aiDraft     Boolean     @default(false) // AI-generated and not yet confirmed: can't be launched until the instructor confirms (or edits) it
   createdAt   DateTime        @default(now())
   responses   Response[]
 

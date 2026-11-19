@@ -3,16 +3,16 @@ import {
   AI_LIMITS,
   type AiDraft,
   type AiGenerateKind,
-  type AiGenerateResult,
   type AiGroupResult,
   type AiKeyPointsResult,
   type AiSortResult,
 } from '@getit/shared';
 import { prisma } from '../db';
-import { env } from '../env';
+import { env, isProd } from '../env';
 import { planBatches } from '../lib/ai-batches';
 import { toAnswerGroups, toDrafts, toKeyPoints, toSuggestions } from '../lib/ai-output';
 import { HttpError } from '../lib/errors';
+import { fakeAiClient } from '../lib/ai-fake';
 import { aiFailed, geminiClient, type AiClient } from '../lib/gemini';
 import { statsFor } from './activities';
 
@@ -20,10 +20,14 @@ import { statsFor } from './activities';
 // reviews the proposal and applies it through the normal endpoints (which validate + emit as usual).
 // Only question / slide text is sent — never a device hash, IP or any identity (rule 2).
 
-let client: AiClient = geminiClient;
+/** E2E tests can run with a fake AI (AI_FAKE=1); production always uses Gemini. */
+const defaultClient: AiClient = env.AI_FAKE && !isProd ? fakeAiClient : geminiClient;
+if (env.AI_FAKE)
+  console.log(isProd ? '[getit] AI_FAKE is ignored in production' : '[getit] Using the fake AI (AI_FAKE=1)');
+let client: AiClient = defaultClient;
 /** Tests swap in a fake AI; null restores Gemini. */
 export function setAiClient(c: AiClient | null) {
-  client = c ?? geminiClient;
+  client = c ?? defaultClient;
 }
 export const aiEnabled = () => client !== geminiClient || !!env.GEMINI_API_KEY;
 
@@ -139,7 +143,7 @@ type GenerateInput = { text: string; count: number; kinds: AiGenerateKind[]; not
  */
 export async function streamDrafts(
   input: GenerateInput,
-  onDrafts: (drafts: AiDraft[]) => void,
+  onDrafts: (drafts: AiDraft[]) => void | Promise<void>,
 ): Promise<number> {
   const batches = planBatches(input.text, input.count);
   const seen = new Set<string>();
@@ -156,7 +160,7 @@ export async function streamDrafts(
             ? [
                 b.split
                   ? `The material is part ${b.part} of ${b.parts} of the lecture; ask only about this part.`
-                  : `You are writer ${b.part} of ${b.parts} working on the same material at once: ask about ideas from the ${ordinal(b.part)} quarter of the material, so the writers cover different ideas.`,
+                  : `You are writer ${b.part} of ${b.parts} working on the same material at once: ask about ideas from the ${b.parts === 2 ? (b.part === 1 ? 'first half' : 'second half') : `part ${b.part} of ${b.parts}`} of the material, so the writers cover different ideas.`,
               ]
             : []),
           `Use only these types: ${input.kinds.join(', ')}. Mix them if more than one is allowed.`,
@@ -174,7 +178,7 @@ export async function streamDrafts(
           '</material>',
         ].join('\n'),
         schema: checksSchema,
-      }).then((raw) => {
+      }).then(async (raw) => {
         // No duplicate prompts across requests, never more than asked for.
         const fresh = toDrafts(raw, input.kinds, b.count)
           .filter((d) => {
@@ -185,7 +189,7 @@ export async function streamDrafts(
           })
           .slice(0, input.count - sent);
         sent += fresh.length;
-        if (fresh.length) onDrafts(fresh);
+        if (fresh.length) await onDrafts(fresh);
       }),
     ),
   );
@@ -194,15 +198,6 @@ export async function streamDrafts(
     throw failure ? failure.reason : aiFailed();
   }
   return sent;
-}
-
-const ordinal = (n: number) => ['first', 'second', 'third', 'fourth'][n - 1] ?? `${n}th`;
-
-/** All drafts at once (tests, scripts). */
-export async function generateQuickChecks(input: GenerateInput): Promise<AiGenerateResult> {
-  const drafts: AiDraft[] = [];
-  await streamDrafts(input, (d) => drafts.push(...d));
-  return { drafts };
 }
 
 /**

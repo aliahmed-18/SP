@@ -71,7 +71,11 @@ async function nextPosition(tx: Prisma.TransactionClient, sessionId: string) {
   return (last?.position ?? 0) + 1;
 }
 
-export async function createExplain(sessionId: string, draft: { prompt: string; modelAnswer: string }) {
+export async function createExplain(
+  sessionId: string,
+  draft: { prompt: string; modelAnswer: string },
+  aiDraft = false,
+) {
   return prisma.$transaction(async (tx) => {
     const a = await tx.activity.create({
       data: {
@@ -79,6 +83,7 @@ export async function createExplain(sessionId: string, draft: { prompt: string; 
         type: 'EXPLAIN',
         prompt: draft.prompt,
         modelAnswer: draft.modelAnswer || null,
+        aiDraft,
         position: await nextPosition(tx, sessionId),
       },
     });
@@ -86,10 +91,10 @@ export async function createExplain(sessionId: string, draft: { prompt: string; 
   });
 }
 
-export async function createQuickCheck(sessionId: string, draft: QuickCheckDraft) {
+export async function createQuickCheck(sessionId: string, draft: QuickCheckDraft, aiDraft = false) {
   return prisma.$transaction(async (tx) => {
     const a = await tx.activity.create({
-      data: { sessionId, ...draftData(draft), position: await nextPosition(tx, sessionId) },
+      data: { sessionId, ...draftData(draft), aiDraft, position: await nextPosition(tx, sessionId) },
     });
     return { activity: a, version: await bumpVersion(tx, sessionId) };
   });
@@ -121,7 +126,8 @@ export async function editActivity(
       }
       data = { prompt: change.text.prompt, explanation: change.text.explanation, options };
     }
-    const updated = await tx.activity.update({ where: { id: a.id }, data });
+    // Editing an AI draft means the instructor reviewed it: it counts as confirmed.
+    const updated = await tx.activity.update({ where: { id: a.id }, data: { ...data, aiDraft: false } });
     return { activity: updated, version: await bumpVersion(tx, a.sessionId) };
   });
 }
@@ -249,6 +255,8 @@ export function launchActivity(sessionId: string, activityId: string, timerSec =
     await requireLiveSession(tx, sessionId);
     const a = await load(tx, sessionId, activityId);
     if (a.status !== 'DRAFT') throw new HttpError(409, 'NOT_DRAFT', 'This activity has already been run.');
+    if (a.aiDraft)
+      throw new HttpError(409, 'AI_DRAFT', 'Review and confirm this AI draft before launching it.');
     await claimLiveSlot(tx, sessionId, a.id);
     return finish(
       tx,
@@ -388,5 +396,16 @@ export function addTime(sessionId: string, activityId: string, seconds: number) 
       tx,
       await tx.activity.update({ where: { id: a.id }, data: { closesAt: new Date(base + seconds * 1000) } }),
     );
+  });
+}
+
+/** Confirm AI drafts (one, or all of the session's): they can then be launched like any activity. */
+export async function confirmAiDrafts(sessionId: string, activityId?: string) {
+  return prisma.$transaction(async (tx) => {
+    const { count } = await tx.activity.updateMany({
+      where: { sessionId, aiDraft: true, ...(activityId ? { id: activityId } : {}) },
+      data: { aiDraft: false },
+    });
+    return { count, version: await bumpVersion(tx, sessionId) };
   });
 }

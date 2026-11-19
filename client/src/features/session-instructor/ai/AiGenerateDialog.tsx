@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, MessageSquareText, Plus, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { MessageSquareText, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { AI_LIMITS, type AiDraft, type AiGenerateKind } from '@getit/shared';
-import { Spinner } from '@/components/brand/brand';
+import { AI_LIMITS, type AiGenerateKind } from '@getit/shared';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,12 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { api, ApiRequestError } from '@/lib/api';
+import { ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { KIND_ICON, KIND_LABEL } from '../activities/kinds';
-import { AI_PRIVACY_NOTE, streamGenerate } from './ai-api';
-import { AiDraftCard } from './AiDraftCard';
-import { Elapsed } from './Elapsed';
+import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
 import { AiSourceFields } from './AiSourceFields';
 import { sourceText, type SourceFile } from './source-text';
 
@@ -30,92 +27,55 @@ const KINDS: { kind: AiGenerateKind; label: string; Icon: typeof Sparkles }[] = 
 const COUNTS = [3, 5, 8] as const;
 
 /**
- * "AI generation" (MVP: Prepare from slides): upload slides / notes or paste text → drafts to review
- * (Quick Checks and Explain prompts). Ticked drafts are added to the activities list as DRAFT — never
- * launched — where the instructor can edit them like any other activity.
+ * "AI generation" (MVP: Prepare from slides): upload slides / notes or paste text, press Generate, and
+ * carry on. The server writes the drafts in the background and adds them to the activities list as
+ * "AI drafts" (reviewed and confirmed there); this dialog closes at once.
  */
 export function AiGenerateDialog({
   code,
   open,
   onOpenChange,
+  busy,
 }: {
   code: string;
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  /** A generation is already running for this lecture. */
+  busy: boolean;
 }) {
-  // Kept while the dialog is closed, so "Back" or reopening doesn't lose uploads or a long paste.
+  // Kept while the dialog is closed, so reopening doesn't lose uploads or a long paste.
   const [files, setFiles] = useState<SourceFile[]>([]);
   const [pasted, setPasted] = useState('');
   const [note, setNote] = useState('');
   const [count, setCount] = useState<number>(5);
   const [kinds, setKinds] = useState<AiGenerateKind[]>(['MCQ', 'TRUE_FALSE']);
-  const [drafts, setDrafts] = useState<{ draft: AiDraft; on: boolean }[] | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const text = sourceText(files, pasted);
   const reading = files.some((f) => f.text === null && !f.error);
   const tooShort = text.length < AI_LIMITS.slideTextMin;
   const tooLong = text.length > AI_LIMITS.slideTextMax;
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  /** Bumped per run: restarts the elapsed timer. */
-  const [run, setRun] = useState(0);
-  const chosen = drafts?.filter((d) => d.on) ?? [];
-
-  // The work goes on while the dialog is closed (keep teaching); a toast says when the drafts are ready.
-  const openRef = useRef(open);
-  useEffect(() => {
-    openRef.current = open;
-  }, [open]);
 
   async function generate() {
+    setStarting(true);
     setError(null);
-    setDrafts([]);
-    setRunning(true);
-    setRun((n) => n + 1);
     try {
-      const total = await streamGenerate(code, { text, count, kinds, note }, (fresh) =>
-        setDrafts((prev) => [...(prev ?? []), ...fresh.map((draft) => ({ draft, on: true }))]),
-      );
-      if (!openRef.current)
-        toast.success(`${total} AI ${total === 1 ? 'draft is' : 'drafts are'} ready to review`, {
-          duration: 15_000,
-          action: { label: 'Review', onClick: () => onOpenChange(true) },
-        });
-    } catch (err) {
-      const message = err instanceof ApiRequestError ? err.message : 'Something went wrong.';
-      setError(message);
-      setDrafts((prev) => (prev?.length ? prev : null));
-      if (!openRef.current) toast.error(message);
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  async function add() {
-    setAdding(true);
-    let added = 0;
-    for (const { draft } of chosen) {
-      try {
-        await api(`/sessions/${code}/activities`, { method: 'POST', body: JSON.stringify(draft) });
-        added++;
-      } catch (err) {
-        toast.error(err instanceof ApiRequestError ? err.message : "Couldn't add a draft. Try again.");
-        break;
-      }
-    }
-    setAdding(false);
-    if (added > 0) {
-      toast.success(
-        `${added} ${added === 1 ? 'draft' : 'drafts'} added. Check ${added === 1 ? 'it' : 'them'} before you launch.`,
-      );
-      setDrafts(null);
+      await aiApi.generate(code, { text, count, kinds, note });
       onOpenChange(false);
+      toast.info('Preparing drafts in the background', {
+        description: 'Keep teaching — they appear in your activities list as AI drafts.',
+      });
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Something went wrong.');
+    } finally {
+      setStarting(false);
     }
   }
 
   let hint: string | null = null;
-  if (reading) hint = 'Reading your files…';
+  if (busy) hint = 'Drafts are being prepared right now. You can start another set when they are ready.';
+  else if (reading) hint = 'Reading your files…';
   else if (tooLong)
     hint = `That's too much text (${text.length.toLocaleString('en')} characters, max ${AI_LIMITS.slideTextMax.toLocaleString('en')}). Remove a file or upload a shorter one.`;
   else if (tooShort && (files.length || pasted))
@@ -127,152 +87,91 @@ export function AiGenerateDialog({
         <DialogHeader>
           <DialogTitle>AI generation</DialogTitle>
           <DialogDescription>
-            Upload your slides or notes and get Quick Checks and Explain prompts to review. Nothing reaches
-            students until you launch it.
+            Upload your slides or notes and press Generate — then carry on. The drafts are written in the
+            background and appear in your activities list for you to review. Nothing reaches students until
+            you launch it.
           </DialogDescription>
         </DialogHeader>
 
-        {running && !drafts?.length ? (
-          <div className="flex flex-col items-center gap-3 py-10 text-center" role="status">
-            <Spinner decorative className="!size-8" />
-            <p className="font-medium">Preparing drafts…</p>
-            <p className="text-sm text-muted-foreground">
-              Drafts appear here one by one as they're ready. <Elapsed key={run} />
-            </p>
-            <p className="text-sm text-muted-foreground">You can close this window and keep teaching.</p>
-          </div>
-        ) : drafts ? (
-          <>
-            <ul className="flex flex-col gap-3" data-testid="ai-drafts">
-              {drafts.map(({ draft, on }, i) => (
-                <li
-                  key={i}
-                  className={cn(
-                    'flex gap-3 rounded-xl border p-3',
-                    on ? 'border-primary/40 bg-accent/40' : 'opacity-60',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={(e) =>
-                      setDrafts((prev) => prev!.map((x, j) => (j === i ? { ...x, on: e.target.checked } : x)))
-                    }
-                    className="mt-1 size-5 shrink-0 accent-primary"
-                    aria-label={`Use draft: ${draft.prompt}`}
-                  />
-                  <AiDraftCard draft={draft} />
-                </li>
-              ))}
-            </ul>
-            {running && (
-              <p
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-                role="status"
-                data-testid="ai-more"
-              >
-                <Spinner decorative className="!size-4" /> Writing more drafts ({drafts.length} of {count}{' '}
-                ready)… <Elapsed key={run} />
-              </p>
-            )}
-            {error && !running && (
-              <p className="text-sm text-muted-foreground" data-testid="ai-partial">
-                Some drafts couldn't be written: {error}
-              </p>
-            )}
-          </>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <AiSourceFields
-              files={files}
-              setFiles={setFiles}
-              pasted={pasted}
-              setPasted={setPasted}
-              note={note}
-              setNote={setNote}
-            />
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium">Draft types</legend>
-              <div className="flex flex-wrap gap-2">
-                {KINDS.map(({ kind, label, Icon }) => {
-                  const on = kinds.includes(kind);
-                  return (
-                    <button
-                      key={kind}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() =>
-                        setKinds((prev) => (on ? prev.filter((x) => x !== kind) : [...prev, kind]))
-                      }
-                      className={cn(
-                        'flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm font-medium',
-                        on && 'border-primary bg-accent text-accent-foreground ring-1 ring-primary',
-                      )}
-                    >
-                      <Icon className="size-4" aria-hidden /> {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium">How many drafts</legend>
-              <div className="flex gap-2">
-                {COUNTS.map((c) => (
+        <div className="flex flex-col gap-4">
+          <AiSourceFields
+            files={files}
+            setFiles={setFiles}
+            pasted={pasted}
+            setPasted={setPasted}
+            note={note}
+            setNote={setNote}
+          />
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-sm font-medium">Draft types</legend>
+            <div className="flex flex-wrap gap-2">
+              {KINDS.map(({ kind, label, Icon }) => {
+                const on = kinds.includes(kind);
+                return (
                   <button
-                    key={c}
+                    key={kind}
                     type="button"
-                    aria-pressed={count === c}
-                    onClick={() => setCount(c)}
+                    aria-pressed={on}
+                    onClick={() =>
+                      setKinds((prev) => (on ? prev.filter((x) => x !== kind) : [...prev, kind]))
+                    }
                     className={cn(
-                      'min-h-11 w-16 rounded-xl border font-medium',
-                      count === c && 'border-primary bg-accent text-accent-foreground ring-1 ring-primary',
+                      'flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm font-medium',
+                      on && 'border-primary bg-accent text-accent-foreground ring-1 ring-primary',
                     )}
                   >
-                    {c}
+                    <Icon className="size-4" aria-hidden /> {label}
                   </button>
-                ))}
-              </div>
-            </fieldset>
-            {hint && (
-              <p className="text-sm text-muted-foreground" data-testid="ai-hint">
-                {hint}
-              </p>
-            )}
-            {error && (
-              <p
-                className="rounded-lg border border-destructive/40 p-3 text-sm"
-                role="alert"
-                data-testid="ai-error"
-              >
-                {error} Your files are kept. You can still write activities by hand.
-              </p>
-            )}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          </fieldset>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-sm font-medium">How many drafts</legend>
+            <div className="flex gap-2">
+              {COUNTS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-pressed={count === c}
+                  onClick={() => setCount(c)}
+                  className={cn(
+                    'min-h-11 w-16 rounded-xl border font-medium',
+                    count === c && 'border-primary bg-accent text-accent-foreground ring-1 ring-primary',
+                  )}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          {hint && (
+            <p className="text-sm text-muted-foreground" data-testid="ai-hint">
+              {hint}
+            </p>
+          )}
+          {error && (
+            <p
+              className="rounded-lg border border-destructive/40 p-3 text-sm"
+              role="alert"
+              data-testid="ai-error"
+            >
+              {error} Your files are kept. You can still write activities by hand.
+            </p>
+          )}
+        </div>
 
         <p className="text-xs text-muted-foreground">
           Files are read on this computer; only their text is sent. {AI_PRIVACY_NOTE}
         </p>
         <DialogFooter>
-          {drafts ? (
-            <>
-              <Button variant="outline" onClick={() => setDrafts(null)} disabled={running}>
-                <ArrowLeft /> Back
-              </Button>
-              <Button onClick={() => void add()} disabled={chosen.length === 0 || adding || running}>
-                <Plus /> {chosen.length === 1 ? 'Add 1 draft' : `Add ${chosen.length} drafts`}
-              </Button>
-            </>
-          ) : (
-            <Button
-              onClick={() => void generate()}
-              disabled={tooShort || tooLong || reading || kinds.length === 0 || running}
-              data-testid="ai-generate"
-            >
-              <Sparkles /> Generate drafts
-            </Button>
-          )}
+          <Button
+            onClick={() => void generate()}
+            disabled={tooShort || tooLong || reading || kinds.length === 0 || starting || busy}
+            data-testid="ai-generate"
+          >
+            <Sparkles /> Generate drafts
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

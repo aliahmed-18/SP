@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '../src/env';
 import type { HttpError } from '../src/lib/errors';
-import { FALLBACK_MODELS, geminiClient, parseJsonLoose } from '../src/lib/gemini';
+import { FALLBACK_MODELS, geminiClient, parseJsonLoose, retryAfterMs } from '../src/lib/gemini';
 
 const REQ = { system: 'sys', prompt: 'prompt', schema: { type: 'OBJECT' } };
 type Call = { url: string; init: RequestInit & { headers: Record<string, string> } };
@@ -89,8 +89,14 @@ describe('Gemini client', () => {
     respond(fail(400, 'API key not valid. Please pass a valid API key. [API_KEY_INVALID]'));
     expect(await error(geminiClient(REQ))).toMatchObject({ status: 502, code: 'AI_KEY' });
 
-    respond(fail(429, 'Resource has been exhausted'));
+    // Every model busy (each retried once after Google's delay) → AI_BUSY.
+    calls = [];
+    env.GEMINI_MODEL = 'gemini-flash-latest';
+    const busy = () => fail(429, 'Resource exhausted. "retryDelay": "0s"');
+    respond(busy(), busy(), busy(), busy());
     expect(await error(geminiClient(REQ))).toMatchObject({ status: 429, code: 'AI_BUSY' });
+    expect(calls).toHaveLength(4);
+    calls = [];
 
     respond(new DOMException('timed out', 'TimeoutError'));
     expect(await error(geminiClient(REQ))).toMatchObject({ status: 504, code: 'AI_TIMEOUT' });
@@ -116,6 +122,44 @@ describe('Gemini client', () => {
     respond();
     expect(await error(geminiClient(REQ))).toMatchObject({ status: 503, code: 'AI_OFF' });
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('free-tier limits (429)', () => {
+  it('per-minute limit: waits as long as Google asks, then retries the same model', async () => {
+    env.GEMINI_MODEL = 'gemini-flash-latest';
+    respond(fail(429, '{"error":{"details":[{"retryDelay":"0s"}]}}'), ok('{"a":1}'));
+    expect(await geminiClient(REQ)).toEqual({ a: 1 });
+    expect(calls.map((c) => c.url.split('/models/')[1])).toEqual([
+      'gemini-flash-latest:generateContent',
+      'gemini-flash-latest:generateContent',
+    ]);
+  });
+
+  it('daily limit: no waiting, straight to Flash-Lite (its own allowance)', async () => {
+    env.GEMINI_MODEL = 'gemini-flash-latest';
+    respond(
+      fail(429, 'Quota exceeded for metric: generate_content_free_tier_requests, limit: PerDay'),
+      ok('{"b":2}'),
+    );
+    expect(await geminiClient(REQ)).toEqual({ b: 2 });
+    expect(calls[1]!.url).toContain('/models/gemini-flash-lite-latest:');
+  });
+
+  it('daily limit on every model: says so, and how to lift it', async () => {
+    env.GEMINI_MODEL = 'gemini-flash-latest';
+    const daily = () => fail(429, 'limit: PerDay');
+    respond(daily(), daily());
+    const e = await error(geminiClient(REQ));
+    expect(e).toMatchObject({ code: 'AI_BUSY' });
+    expect(e.message).toMatch(/Today's free AI limit/);
+  });
+
+  it('reads the retry delay Google sends', () => {
+    expect(retryAfterMs('"retryDelay": "17s"')).toBe(17_000);
+    expect(retryAfterMs('Please retry in 2.5s.')).toBe(2_500);
+    expect(retryAfterMs('limit: PerDay')).toBeNull();
+    expect(retryAfterMs('no hint')).toBe(5_000);
   });
 });
 

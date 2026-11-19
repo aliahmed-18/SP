@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import type { AiKeyPointsResult, AiSortResult, HostState } from '@getit/shared';
-import { joinAs, ndjson, startSession } from './helpers';
+import { joinAs, startSession } from './helpers';
 
 // AI helpers, part 2 (client side): files read in the browser, Explain drafts, Take-away key points,
 // sorting Explain answers. The AI's replies are faked at the network edge; everything else is real.
@@ -16,32 +16,13 @@ async function aiOn(page: Page) {
 test('upload slides: PDF, PowerPoint (with notes), Word and HTML are read in the browser', async ({
   page,
 }) => {
-  await aiOn(page);
+  test.skip(!!process.env.E2E_BASE_URL, 'server-side generation needs the fake AI (AI_FAKE=1)');
   const code = await startSession(page);
   let sent: { text: string; kinds: string[]; note: string } | undefined;
+  // Look at what the browser sends (only text, read from the files here), then let it through.
   await page.route(`**/api/sessions/${code}/ai/generate`, async (r) => {
     sent = r.request().postDataJSON();
-    await r.fulfill(
-      ndjson(
-        {
-          drafts: [
-            {
-              type: 'EXPLAIN',
-              prompt: 'In one sentence: what does R squared tell you?',
-              modelAnswer: 'The share of the variation in y the line explains.',
-            },
-            {
-              type: 'QUICK_CHECK',
-              kind: 'TRUE_FALSE',
-              prompt: 'Correlation implies causation.',
-              correct: false,
-              explanation: 'It does not.',
-            },
-          ],
-        },
-        { done: true, count: 2 },
-      ),
-    );
+    await r.continue();
   });
 
   await page.getByRole('button', { name: 'AI generation' }).click();
@@ -60,7 +41,7 @@ test('upload slides: PDF, PowerPoint (with notes), Word and HTML are read in the
   await dialog.getByLabel('Note for the AI (optional)').fill('Focus on the main formulas');
   await dialog.getByRole('button', { name: 'Explain', exact: true }).click();
   await dialog.getByTestId('ai-generate').click();
-  await expect(dialog.getByTestId('ai-drafts')).toContainText('Model answer (only you see it)');
+  await expect(dialog).toBeHidden();
 
   expect(sent!.note).toBe('Focus on the main formulas');
   expect(sent!.kinds).toContain('EXPLAIN');
@@ -84,10 +65,11 @@ test('upload slides: PDF, PowerPoint (with notes), Word and HTML are read in the
   expect(sent!.text).not.toContain('var x=1'); // HTML scripts and styles are dropped
   expect(sent!.text).not.toContain('color:red');
 
-  await dialog.getByRole('button', { name: 'Add 2 drafts' }).click();
+  // The drafts (incl. Explain) arrive in the list as AI drafts.
   const rows = page.getByTestId('activity-row');
-  await expect(rows).toHaveCount(2);
-  await expect(rows.first()).toContainText('Explain');
+  await expect(rows).toHaveCount(5, { timeout: 15_000 });
+  await expect(page.getByTestId('ai-draft-badge')).toHaveCount(5);
+  await expect(rows.filter({ hasText: 'Explain' }).first()).toBeVisible();
 });
 
 test('Take-away: AI draft key points fill the editor, then publish as usual', async ({ page, browser }) => {

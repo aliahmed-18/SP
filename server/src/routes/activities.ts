@@ -17,6 +17,7 @@ import { emitHostSnapshot, emitPresentSnapshot, emitStudentStage, safeEmit } fro
 import { NO_RESULTS, toHostActivity } from '../realtime/dto';
 import {
   activityResults,
+  confirmAiDrafts,
   copyActivities,
   createExplain,
   createQuickCheck,
@@ -60,6 +61,24 @@ activitiesRouter.patch('/activities/:id', async (req, res) => {
   const { activity } = await editActivity(a, change);
   structureChanged(a.sessionId);
   res.json(toHostActivity(activity, await activityResults(activity)));
+});
+
+/** Confirm one AI draft (reviewed): it can now be launched. */
+activitiesRouter.post('/activities/:id/confirm', async (req, res) => {
+  const { id } = parse(idParamSchema, req.params);
+  const a = await ownedActivity(instructorId(res), id);
+  const { count } = await confirmAiDrafts(a.sessionId, a.id);
+  structureChanged(a.sessionId);
+  res.json({ confirmed: count });
+});
+
+/** "Confirm all" AI drafts of the session (the host warns first: AI drafts can contain mistakes). */
+activitiesRouter.post('/sessions/:code/activities/confirm-ai', requireInstructor, async (req, res) => {
+  const { code } = parse(codeParamSchema, req.params);
+  const s = await getHostSession(instructorId(res), code);
+  const { count } = await confirmAiDrafts(s.id);
+  structureChanged(s.id);
+  res.json({ confirmed: count });
 });
 
 activitiesRouter.delete('/activities/:id', async (req, res) => {

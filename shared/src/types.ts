@@ -138,6 +138,8 @@ export type HostActivity = {
   responseCount: number;
   /** Explain, once closed: the answers with their tags (blocked ones are never stored with text). */
   explainAnswers: ExplainAnswer[];
+  /** AI-generated, not yet confirmed: can't be launched (and the projector skips it) until confirmed. */
+  aiDraft: boolean;
 };
 
 /** Projector view: like the host's, minus modelAnswer (and Explain texts, Phase 6). */
@@ -158,7 +160,20 @@ export type HostState = {
   /** Topic / Explain answer currently shown on the projector (so the host can see / stop it), or null. */
   projectedTopicId: string | null;
   projectedAnswerId: string | null;
+  /** The AI generation running (or just finished) on the server for this session, or null. */
+  aiJob: AiJob | null;
   serverTime: string;
+};
+
+/** Background AI generation: drafts land in the activities list as they arrive; the page can close. */
+export type AiJob = {
+  status: 'running' | 'done' | 'failed';
+  expected: number;
+  received: number;
+  startedAt: string;
+  finishedAt: string | null;
+  /** Why it stopped (failed, or finished with fewer drafts than asked). */
+  error: string | null;
 };
 
 /** A Q&A topic as shown on the projector: anonymous questions, counts, reply. */

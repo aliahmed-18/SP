@@ -17,6 +17,7 @@ const base: Activity = {
   round: 1,
   position: 1,
   closesAt: null,
+  aiDraft: false,
   createdAt: new Date(),
 };
 

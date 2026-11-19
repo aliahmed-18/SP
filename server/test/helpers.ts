@@ -7,6 +7,7 @@ import type { ClientToServerEvents, ServerToClientEvents, SocketAuth } from '@ge
 import { createApp } from '../src/app';
 import { loginLimiter, registerLimiter } from '../src/auth/routes';
 import { prisma } from '../src/db';
+import { aiJobFor, waitForAiJob } from '../src/services/ai-job-store';
 import { setIo } from '../src/realtime/broadcast';
 import { createSocketServer, type IoServer } from '../src/realtime/socket';
 
@@ -134,29 +135,26 @@ export function eventWhere<E extends keyof ServerToClientEvents>(
   });
 }
 
-/** POST …/ai/generate and read its NDJSON stream (or a plain JSON error before streaming starts). */
+/**
+ * POST …/ai/generate (starts a background job), wait for the job, and return what it produced: the AI
+ * drafts saved in the activities list, in order, and the final job state.
+ */
 export async function generate(agent: ReturnType<typeof request.agent>, code: string, body: object) {
-  const res = await agent
-    .post(`/api/sessions/${code}/ai/generate`)
-    .send(body)
-    .buffer(true)
-    .parse((r, cb) => {
-      let text = '';
-      r.setEncoding('utf8');
-      r.on('data', (c: string) => (text += c));
-      r.on('end', () => cb(null, text));
-    });
-  const lines = String(res.body)
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
-  const last = lines.at(-1) as { error?: { code: string; message: string } } | undefined;
+  const res = await agent.post(`/api/sessions/${code}/ai/generate`).send(body);
+  const s = await prisma.session.findFirst({ where: { code }, orderBy: { startedAt: 'desc' } });
+  if (s) await waitForAiJob(s.id);
+  const rows = s
+    ? await prisma.activity.findMany({
+        where: { sessionId: s.id, aiDraft: true },
+        orderBy: { position: 'asc' },
+      })
+    : [];
+  const job = s ? aiJobFor(s.id) : null;
   return {
     status: res.status,
-    contentType: String(res.headers['content-type']),
-    lines,
-    drafts: lines.flatMap((l) => (Array.isArray(l.drafts) ? (l.drafts as { prompt: string }[]) : [])),
-    error: last?.error,
+    body: res.body as Record<string, unknown>,
+    drafts: rows,
+    job,
+    error: job?.error ?? null,
   };
 }

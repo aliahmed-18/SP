@@ -22,6 +22,8 @@ export default defineConfig({
     ? undefined
     : {
         command: 'npm run dev',
+        // The server-side AI flows run against a fake AI (never in production; see server/src/lib/ai-fake.ts).
+        env: { AI_FAKE: '1', AI_FAKE_DELAY_MS: '2500' },
         url: 'http://localhost:5173',
         reuseExistingServer: true,
         timeout: 120_000,

@@ -1,15 +1,41 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, Eye, Lock, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  CircleCheck,
+  Eye,
+  Lock,
+  Pencil,
+  Play,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { answerLabel, type ActivityStats, type HostActivity } from '@getit/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { GetitSocket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
+import { aiApi } from '../ai/ai-api';
 import { ConfirmDialog } from '../qa/ConfirmDialog';
+import { ApiRequestError } from '@/lib/api';
 import { activitiesApi, runLifecycle } from './activities-api';
 import { activityKind } from './kinds';
 import { ExplainAnswers } from './ExplainAnswers';
 import { ResultsPanel } from './ResultsPanel';
+
+async function confirmDraft(id: string) {
+  try {
+    await aiApi.confirm(id);
+    toast.success('Draft confirmed');
+    return true;
+  } catch (err) {
+    toast.error(err instanceof ApiRequestError ? err.message : 'Something went wrong.');
+    return false;
+  }
+}
 
 const STATUS_BADGE = {
   DRAFT: null,
@@ -91,6 +117,11 @@ export function ActivityRow({
           <span className="min-w-0 flex-1 font-medium break-words" dir="auto">
             {a.prompt}
           </span>
+          {a.aiDraft && (
+            <Badge variant="attention" data-testid="ai-draft-badge">
+              <Sparkles aria-hidden /> AI draft
+            </Badge>
+          )}
           {badge && (
             <Badge variant={badge.variant}>
               {a.status === 'LIVE' && <span className="size-1.5 rounded-full bg-attention" aria-hidden />}
@@ -103,7 +134,12 @@ export function ActivityRow({
             aria-hidden
           />
         </button>
-        {a.status === 'DRAFT' && !ended && !open && (
+        {a.aiDraft && !ended && !open && (
+          <Button size="sm" variant="outline" onClick={() => setExpanded(true)}>
+            <Eye /> Review
+          </Button>
+        )}
+        {a.status === 'DRAFT' && !a.aiDraft && !ended && !open && (
           <Button
             size="sm"
             onClick={() => void life('activity:launch')}
@@ -117,6 +153,12 @@ export function ActivityRow({
 
       {open && (
         <div className="flex flex-col gap-4 border-t p-4">
+          {a.aiDraft && (
+            <p className="rounded-lg bg-attention/10 p-3 text-sm" data-testid="ai-draft-help">
+              AI draft: check the question, the correct answer and the explanation, then confirm it — or edit
+              it, which confirms it too. It can't be launched before that.
+            </p>
+          )}
           {a.status === 'DRAFT' && isExplain && (
             <p className="text-sm text-muted-foreground">
               {a.modelAnswer ? `Model answer (only you see it): ${a.modelAnswer}` : 'No model answer.'}
@@ -173,7 +215,12 @@ export function ActivityRow({
             ))}
 
           <div className="flex flex-wrap items-center gap-2">
-            {a.status === 'DRAFT' && !ended && (
+            {a.aiDraft && !ended && (
+              <Button onClick={() => void run(() => confirmDraft(a.id))}>
+                <CircleCheck /> Confirm draft
+              </Button>
+            )}
+            {a.status === 'DRAFT' && !a.aiDraft && !ended && (
               <Button
                 onClick={() => void life('activity:launch')}
                 disabled={busy || anotherLive}

@@ -52,7 +52,7 @@ Start a session, then join from a phone or a second browser window with the code
 | `npm run typecheck` | `tsc` on shared, server and client |
 | `npm run lint` | ESLint (flat config, typescript-eslint) |
 | `npm test` | Vitest: shared unit tests + server integration tests against `TEST_DATABASE_URL` |
-| `npm run e2e` | Playwright (starts `npm run dev` if it isn't running; needs `db:seed`). Run `npx playwright install chromium` once first. `E2E_BASE_URL=http://localhost:4000 npm run e2e` tests a running production build |
+| `npm run e2e` | Playwright (starts `npm run dev` if it isn't running; needs `db:seed`). Run `npx playwright install chromium` once first. `E2E_BASE_URL=http://localhost:4000 npm run e2e` tests a running production build | The server-side AI flows use a fake AI (`AI_FAKE=1`, set by `playwright.config.ts`; ignored in production) — if `npm run dev` is already running, start it as `AI_FAKE=1 npm run dev` for those tests.
 | `npm run build` then `npm start` | Production: one Node service on :4000 serves the API, Socket.io and the built client. The login cookie is `Secure` in production, so use `localhost` or HTTPS |
 | `npm run db:migrate` / `db:deploy` / `db:seed` / `db:reset` | Prisma (loads the root `.env`) |
 | `npm run format` | Prettier |

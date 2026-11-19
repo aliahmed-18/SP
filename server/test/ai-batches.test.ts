@@ -1,16 +1,29 @@
-// Smooth AI: small parallel requests, drafts streamed as each finishes, one failure keeps the rest.
+// Background AI generation: few parallel requests (free-tier friendly), drafts saved as each finishes,
+// the host page updated live, one failed part keeps the rest.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { HostState } from '@getit/shared';
 import { prisma } from '../src/db';
-import { MAX_BATCHES, MIN_PART_CHARS, planBatches } from '../src/lib/ai-batches';
+import { BATCH_QUESTIONS, MAX_BATCHES, MIN_PART_CHARS, planBatches } from '../src/lib/ai-batches';
 import { HttpError } from '../src/lib/errors';
 import type { AiRequest } from '../src/lib/gemini';
 import { aiLimiter } from '../src/routes/ai';
 import { setAiClient } from '../src/services/ai';
-import { generate, newInstructor, newSession, resetDb, startLiveServer } from './helpers';
+import { clearAiJobs, waitForAiJob } from '../src/services/ai-job-store';
+import {
+  eventWhere,
+  generate,
+  newInstructor,
+  newSession,
+  nextEvent,
+  resetDb,
+  socketToken,
+  startLiveServer,
+} from './helpers';
 
 beforeEach(async () => {
   await resetDb();
   aiLimiter.reset();
+  clearAiJobs();
 });
 afterEach(() => setAiClient(null));
 afterAll(() => prisma.$disconnect());
@@ -25,61 +38,47 @@ const tf = (prompt: string) => ({ kind: 'TRUE_FALSE', prompt, correctTrue: true,
 const words = (t: string) => t.split(/\s+/).filter(Boolean);
 
 describe('planBatches (pure)', () => {
-  it('about 2 questions per request, at most 4 requests, counts add up', () => {
-    expect(planBatches(SHORT, 1).map((b) => b.count)).toEqual([1]);
-    expect(planBatches(SHORT, 5).map((b) => b.count)).toEqual([2, 2, 1]);
-    expect(planBatches(SHORT, 8).map((b) => b.count)).toEqual([2, 2, 2, 2]);
+  it(`about ${BATCH_QUESTIONS} questions per request, at most ${MAX_BATCHES} requests at once`, () => {
+    expect(planBatches(SHORT, 3).map((b) => b.count)).toEqual([3]);
+    expect(planBatches(SHORT, 5).map((b) => b.count)).toEqual([3, 2]);
+    expect(planBatches(SHORT, 8).map((b) => b.count)).toEqual([4, 4]);
     expect(planBatches(LONG, 8)).toHaveLength(MAX_BATCHES);
   });
 
   it('long material: one part per request, cut at paragraph breaks, nothing lost', () => {
-    const parts = planBatches(LONG, 6);
+    const parts = planBatches(LONG, 8);
     expect(LONG.length).toBeGreaterThan(MIN_PART_CHARS * parts.length);
     expect(parts.every((p) => p.split && p.text.startsWith('Idea '))).toBe(true);
     expect(words(parts.map((p) => p.text).join(' '))).toEqual(words(LONG));
   });
 
-  it('short material: every request reads all of it (and is asked for different ideas)', () => {
-    const parts = planBatches(SHORT, 6);
-    expect(parts.every((p) => !p.split && p.text === SHORT)).toBe(true);
+  it('short material: every request reads all of it (and is asked for a different half)', () => {
+    expect(planBatches(SHORT, 8).every((p) => !p.split && p.text === SHORT)).toBe(true);
   });
 });
 
-describe('streamed, parallel generation', () => {
-  it('requests run at once; each part streams as it finishes; a failed part keeps the rest', async () => {
+describe('background generation', () => {
+  it('requests run at once; drafts saved in finishing order; a failed part keeps the rest', async () => {
     const { agent } = await newInstructor();
     const s = await newSession(agent);
-    const seen: AiRequest[] = [];
     let inFlight = 0;
     let maxInFlight = 0;
-    setAiClient(async (req) => {
-      seen.push(req);
+    setAiClient(async (req: AiRequest) => {
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
-      const part = Number(/part (\d) of 3/.exec(req.prompt)?.[1]);
-      await new Promise((r) => setTimeout(r, 40 * part)); // part 1 first, then 2
+      const part = Number(/part (\d) of 2/.exec(req.prompt)?.[1]);
+      await new Promise((r) => setTimeout(r, 40 * part));
       inFlight--;
-      if (part === 3) throw new HttpError(504, 'AI_TIMEOUT', 'slow');
-      return { questions: [tf(`Question from part ${part}?`), tf('Same everywhere?')] };
+      if (part === 2) throw new HttpError(504, 'AI_TIMEOUT', 'slow');
+      return { questions: [tf(`Question from part ${part}?`), tf('Another one?')] };
     });
-    const res = await generate(agent, s.code, { text: LONG, count: 6, kinds: ['TRUE_FALSE'] });
-    expect(res.status).toBe(200);
-    expect(seen).toHaveLength(3);
-    expect(maxInFlight).toBe(3); // really in parallel
-    // One line per finished part, in the order they finished, then the summary line.
-    expect(res.lines).toEqual([
-      {
-        drafts: [
-          expect.objectContaining({ prompt: 'Question from part 1?' }),
-          expect.objectContaining({ prompt: 'Same everywhere?' }),
-        ],
-      },
-      { drafts: [expect.objectContaining({ prompt: 'Question from part 2?' })] }, // duplicate dropped
-      { done: true, count: 3 },
-    ]);
+    const res = await generate(agent, s.code, { text: LONG, count: 8, kinds: ['TRUE_FALSE'] });
+    expect(maxInFlight).toBe(2);
+    expect(res.drafts.map((d) => d.prompt)).toEqual(['Question from part 1?', 'Another one?']);
+    expect(res.job).toMatchObject({ status: 'done', received: 2, expected: 8 });
   });
 
-  it('short material: every writer is told to cover different ideas', async () => {
+  it('short material: the two writers are told to cover different halves', async () => {
     const { agent } = await newInstructor();
     const s = await newSession(agent);
     const prompts: string[] = [];
@@ -87,13 +86,12 @@ describe('streamed, parallel generation', () => {
       prompts.push(req.prompt);
       return { questions: [tf(`Q${prompts.length}?`)] };
     });
-    const res = await generate(agent, s.code, { text: SHORT, count: 4, kinds: ['TRUE_FALSE'] });
-    expect(res.drafts).toHaveLength(2);
-    expect(prompts.some((p) => p.includes('writer 1 of 2') && p.includes('first quarter'))).toBe(true);
-    expect(prompts.some((p) => p.includes('writer 2 of 2') && p.includes('second quarter'))).toBe(true);
+    await generate(agent, s.code, { text: SHORT, count: 8, kinds: ['TRUE_FALSE'] });
+    expect(prompts.some((p) => p.includes('writer 1 of 2') && p.includes('first half'))).toBe(true);
+    expect(prompts.some((p) => p.includes('writer 2 of 2') && p.includes('second half'))).toBe(true);
   });
 
-  it('every part failing ends the stream with the real reason (e.g. the free limit)', async () => {
+  it('every part failing: the job says why (e.g. the free limit), nothing saved', async () => {
     const { agent } = await newInstructor();
     const s = await newSession(agent);
     setAiClient(async () => {
@@ -105,51 +103,46 @@ describe('streamed, parallel generation', () => {
     });
     const res = await generate(agent, s.code, { text: LONG, count: 5 });
     expect(res.drafts).toEqual([]);
-    expect(res.error).toMatchObject({ code: 'AI_BUSY' });
+    expect(res.job).toMatchObject({ status: 'failed' });
+    expect(res.error).toMatch(/free limit/);
   });
 });
 
-describe('streaming over a real connection', () => {
-  it('the first drafts arrive while the slowest part is still being written', async () => {
+describe('the host page while the AI works', () => {
+  it('first drafts appear live while the slow part is still being written; the page can reload', async () => {
     const server = await startLiveServer();
     try {
-      const email = `stream${Date.now()}@example.com`;
-      const reg = await fetch(`${server.url}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Dr. Stream', email, password: 'password123' }),
-      });
-      const cookie = reg.headers.get('set-cookie')!.split(';')[0]!;
-      const created = await fetch(`${server.url}/api/sessions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', cookie },
-        body: JSON.stringify({ topic: 'Streaming' }),
-      });
-      const { code } = (await created.json()) as { code: string };
+      const { agent } = await newInstructor();
+      const s = await newSession(agent);
+      const host = server.connect({ role: 'host', code: s.code, token: await socketToken(agent) });
+      await nextEvent(host, 'state:host');
+      let releaseSlow = () => {};
       setAiClient(async (req) => {
-        const part = Number(/part (\d) of 3/.exec(req.prompt)?.[1]);
-        await new Promise((r) => setTimeout(r, part === 3 ? 1500 : 100)); // part 3 is slow
+        const part = Number(/part (\d) of 2/.exec(req.prompt)?.[1]);
+        if (part === 2) await new Promise<void>((r) => (releaseSlow = r));
         return { questions: [tf(`From part ${part}?`)] };
       });
 
-      const started = Date.now();
-      const res = await fetch(`${server.url}/api/sessions/${code}/ai/generate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', cookie },
-        body: JSON.stringify({ text: LONG, count: 6, kinds: ['TRUE_FALSE'] }),
-      });
-      const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-      const arrivals: { at: number; text: string }[] = [];
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (value) arrivals.push({ at: Date.now() - started, text: value });
-        if (done) break;
-      }
-      const firstDraft = arrivals.find((a) => a.text.includes('"drafts"'))!;
-      const end = arrivals.at(-1)!;
-      expect(firstDraft.at).toBeLessThan(1000); // long before part 3 (1.5 s) is done
-      expect(end.at).toBeGreaterThanOrEqual(1400);
-      expect(arrivals.map((a) => a.text).join('')).toContain('"done":true,"count":3');
+      const firstDraft = eventWhere(host, 'state:host', (st: HostState) =>
+        st.activities.some((a) => a.aiDraft),
+      );
+      const started = await agent
+        .post(`/api/sessions/${s.code}/ai/generate`)
+        .send({ text: LONG, count: 8, kinds: ['TRUE_FALSE'] });
+      expect(started.status).toBe(202);
+      const mid = await firstDraft;
+      expect(mid.aiJob).toMatchObject({ status: 'running', received: 1, expected: 8 });
+      expect(mid.activities.map((a) => [a.prompt, a.aiDraft])).toEqual([['From part 1?', true]]);
+
+      // A refreshed host page (new snapshot) still knows the job is running.
+      const fresh = await agent.get(`/api/sessions/${s.code}/host`);
+      expect((fresh.body as HostState).aiJob).toMatchObject({ status: 'running', received: 1 });
+
+      const done = eventWhere(host, 'state:host', (st: HostState) => st.aiJob?.status === 'done');
+      releaseSlow();
+      const end = await done;
+      expect(end.activities.filter((a) => a.aiDraft)).toHaveLength(2);
+      await waitForAiJob(s.id);
     } finally {
       await server.close();
     }

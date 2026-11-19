@@ -102,6 +102,7 @@ export function toHostActivity(a: Activity, r: ActivityResults): HostActivity {
     stats: r.stats,
     responseCount: r.responseCount,
     explainAnswers: r.explainAnswers,
+    aiDraft: a.aiDraft,
   };
 }
 

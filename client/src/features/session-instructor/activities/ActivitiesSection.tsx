@@ -3,6 +3,7 @@ import { Copy, ListChecks, MessageSquareText, Sparkles } from 'lucide-react';
 import type { ActivityStats, HostActivity, HostState, QuickCheckKind } from '@getit/shared';
 import { Button } from '@/components/ui/button';
 import type { GetitSocket } from '@/lib/socket';
+import { AiActivityBar } from '../ai/AiActivityBar';
 import { AiGenerateDialog } from '../ai/AiGenerateDialog';
 import { useAiEnabled } from '../ai/ai-api';
 import { activitiesApi } from './activities-api';
@@ -104,6 +105,13 @@ export function ActivitiesSection({
             <span className="text-base font-normal text-muted-foreground">{activities.length}</span>
           )}
         </h2>
+        {!ended && (
+          <AiActivityBar
+            code={session.code}
+            job={state.aiJob}
+            drafts={activities.filter((x) => x.aiDraft).length}
+          />
+        )}
         {activities.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed p-10 text-center">
             <ListChecks className="size-6 text-primary" aria-hidden />
@@ -145,7 +153,14 @@ export function ActivitiesSection({
         target={explainEditor}
         onClose={() => setExplainEditor(null)}
       />
-      {aiEnabled && <AiGenerateDialog code={session.code} open={aiOpen} onOpenChange={setAiOpen} />}
+      {aiEnabled && (
+        <AiGenerateDialog
+          code={session.code}
+          open={aiOpen}
+          onOpenChange={setAiOpen}
+          busy={state.aiJob?.status === 'running'}
+        />
+      )}
       <CopyActivitiesDialog
         code={session.code}
         sessionId={session.id}

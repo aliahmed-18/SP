@@ -1,13 +1,13 @@
 /**
- * Drafts are written by several small AI requests running in parallel (about 2 questions each, at most
- * 4 requests). Each request is short, so the first drafts reach the instructor in seconds and the rest
- * stream in, while every request keeps the model's full thinking (quality first).
+ * Drafts are written by up to 2 AI requests running in parallel (about 4 questions each — the free
+ * Gemini tier allows only a few requests a minute). Each keeps the model's full thinking (quality
+ * first); drafts are saved as each request finishes.
  *
  * Long material is cut into one part per request (at paragraph breaks), so the drafts cover the whole
  * lecture. Short material goes whole to every request, each asked to focus on a different idea.
  */
-export const BATCH_QUESTIONS = 2;
-export const MAX_BATCHES = 4;
+export const BATCH_QUESTIONS = 4;
+export const MAX_BATCHES = 2;
 /** Below this many characters per part, splitting would leave a part with too little to ask about. */
 export const MIN_PART_CHARS = 1500;
 

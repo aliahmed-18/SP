@@ -85,11 +85,28 @@ export function parseJsonLoose(text: string): unknown {
   }
 }
 
+/**
+ * How long Google asks us to wait after a 429 (RetryInfo "retryDelay": "17s" or "retry in 17.3s"),
+ * or null for a daily limit (waiting won't help today).
+ */
+export function retryAfterMs(detail: string): number | null {
+  if (/PerDay|per day|daily/i.test(detail)) return null;
+  const m =
+    /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(detail) ?? /retry in (\d+(?:\.\d+)?)\s*s/i.exec(detail);
+  return m ? Math.ceil(Number(m[1]) * 1000) : 5_000;
+}
+/** Longest we wait for a per-minute limit before moving to the next model. */
+const MAX_WAIT_MS = 30_000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export const geminiClient: AiClient = async (req) => {
   const key = env.GEMINI_API_KEY;
   if (!key) throw new HttpError(503, 'AI_OFF', "AI isn't set up on this server.");
   const models = [...new Set([env.GEMINI_MODEL, ...FALLBACK_MODELS])];
-  for (let m = 0; m < models.length; m++) {
+  let m = 0;
+  let waited = false;
+  let lastBusy: string | null = null;
+  while (m < models.length) {
     const model = models[m]!;
     const started = Date.now();
     const res = await call(req, model, key);
@@ -112,21 +129,40 @@ export const geminiClient: AiClient = async (req) => {
       return value;
     }
     // Log the provider's message for the team; never forward it (it can mention the key or quota).
-    const detail = (await res.text().catch(() => '')).slice(0, 500);
-    console.error(`[getit] AI error ${res.status} (${model}): ${detail}`);
-    if (res.status === 429)
-      throw new HttpError(
-        429,
-        'AI_BUSY',
-        'The AI is busy right now (free limit reached). Try again in a minute.',
-      );
+    const detail = (await res.text().catch(() => '')).slice(0, 1000);
+    console.error(`[getit] AI error ${res.status} (${model}): ${detail.slice(0, 500)}`);
     if (res.status === 401 || res.status === 403 || /API_KEY_INVALID|API key not valid/i.test(detail))
       throw aiKey();
+    if (res.status === 429) {
+      // Free tier: a per-minute limit passes if we wait a little; a daily one doesn't. Then try the next
+      // model, which has its own (larger, for Flash-Lite) allowance.
+      const wait = retryAfterMs(detail);
+      lastBusy = wait === null ? 'daily' : 'minute';
+      if (wait !== null && !waited && wait <= MAX_WAIT_MS) {
+        waited = true;
+        console.log(`[getit] AI ${model} busy; retrying in ${(wait / 1000).toFixed(0)} s`);
+        await sleep(wait);
+        continue;
+      }
+      m++;
+      waited = false;
+      if (m < models.length) console.log(`[getit] AI ${model} busy; trying ${models[m]}`);
+      continue;
+    }
     if (res.status === 404 && m < models.length - 1) {
       console.error(`[getit] AI model "${model}" not found; trying ${models[m + 1]}`);
+      m++;
       continue;
     }
     throw aiFailed();
   }
+  if (lastBusy)
+    throw new HttpError(
+      429,
+      'AI_BUSY',
+      lastBusy === 'daily'
+        ? "Today's free AI limit is used up. It resets tomorrow — or turn on billing for the Gemini key."
+        : 'The AI is busy right now (free limit reached). Try again in a minute.',
+    );
   throw aiFailed();
 };

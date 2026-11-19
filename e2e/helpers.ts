@@ -54,10 +54,3 @@ export async function ask(p: Page, text: string) {
   await p.getByRole('button', { name: 'Send' }).click();
   await expect(p.getByText('Question sent').last()).toBeVisible();
 }
-
-/** A faked AI generate reply in the server's streaming format (one JSON object per line). */
-export const ndjson = (...lines: object[]) => ({
-  status: 200,
-  contentType: 'application/x-ndjson',
-  body: lines.map((l) => JSON.stringify(l)).join('\n') + '\n',
-});

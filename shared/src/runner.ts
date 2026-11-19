@@ -4,7 +4,14 @@
 import type { ActivityStatus, ActivityType } from './types';
 import type { ProjectedItem } from './schemas';
 
-type RunActivity = { id: string; type: ActivityType; status: ActivityStatus; position: number };
+type RunActivity = {
+  id: string;
+  type: ActivityType;
+  status: ActivityStatus;
+  position: number;
+  /** Unconfirmed AI draft: never run until the instructor confirms it. */
+  aiDraft?: boolean;
+};
 type RunState = {
   activities: RunActivity[];
   stageActivityId: string | null;
@@ -20,8 +27,8 @@ export type RunStep =
   | { type: 'none'; label: string };
 
 /** Activities the projector can run, in run order. */
-export function runnable(activities: RunActivity[]) {
-  return [...activities].sort((a, b) => a.position - b.position);
+export function runnable<T extends RunActivity>(activities: T[]): T[] {
+  return activities.filter((a) => !a.aiDraft).sort((a, b) => a.position - b.position);
 }
 
 export function nextStep(state: RunState, autoReveal: boolean): RunStep {

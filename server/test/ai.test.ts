@@ -7,12 +7,15 @@ import { aiTimeout, type AiRequest } from '../src/lib/gemini';
 import { hashDevice } from '../src/lib/deviceHash';
 import { aiLimiter } from '../src/routes/ai';
 import { setAiClient } from '../src/services/ai';
+import { clearAiJobs, waitForAiJob } from '../src/services/ai-job-store';
+import { launchActivity } from '../src/services/activities';
 import { askQuestion } from '../src/services/questions';
 import { generate, newDeviceId, newInstructor, newSession, resetDb } from './helpers';
 
 beforeEach(async () => {
   await resetDb();
   aiLimiter.reset();
+  clearAiJobs();
 });
 afterEach(() => setAiClient(null));
 afterAll(() => prisma.$disconnect());
@@ -118,20 +121,31 @@ describe('AI helpers', () => {
     expect(short.status).toBe(400);
 
     const res = await generate(agent, s.code, { text: SLIDES, count: 5, kinds: ['MCQ', 'TRUE_FALSE'] });
-    expect(res.status).toBe(200);
-    expect(res.contentType).toMatch(/application\/x-ndjson/);
-    expect(res.lines.at(-1)).toEqual({ done: true, count: 2 });
-    const drafts = res.drafts;
-    // Several small requests ran on the same short text; duplicates across them are dropped.
-    expect(drafts.map((d) => d.prompt)).toEqual([
-      'What does the slope b measure?',
-      'Correlation implies causation.',
+    // Answers at once (202); the job runs in the background and saves each valid draft as an AI draft.
+    expect(res.status).toBe(202);
+    expect(res.body.job).toMatchObject({ status: 'running', expected: 5, received: 0 });
+    expect(Object.keys(res.body.job as object).sort()).toEqual([
+      'error',
+      'expected',
+      'finishedAt',
+      'received',
+      'startedAt',
+      'status',
     ]);
-    // Nothing is created until the instructor adds them; each draft is accepted as-is.
-    expect(await prisma.activity.count({ where: { sessionId: s.id } })).toBe(0);
-    for (const d of drafts)
-      expect((await agent.post(`/api/sessions/${s.code}/activities`).send(d)).status).toBe(201);
-    expect(await prisma.activity.count({ where: { sessionId: s.id, status: 'DRAFT' } })).toBe(2);
+    expect(res.job).toMatchObject({ status: 'done', expected: 5, received: 2 });
+    expect(res.job!.error).toMatch(/2 of 5 drafts/);
+    expect(res.drafts.map((d) => [d.prompt, d.status, d.aiDraft])).toEqual([
+      ['What does the slope b measure?', 'DRAFT', true],
+      ['Correlation implies causation.', 'DRAFT', true],
+    ]);
+    // An AI draft can't be launched until it's confirmed (or edited); then it runs like any activity.
+    const [mcq, tf] = res.drafts;
+    await expect(launchActivity(s.id, mcq!.id)).rejects.toMatchObject({ code: 'AI_DRAFT' });
+    expect((await agent.post(`/api/activities/${mcq!.id}/confirm`)).body).toEqual({ confirmed: 1 });
+    await expect(launchActivity(s.id, mcq!.id)).resolves.toBeTruthy();
+    const confirmAll = await agent.post(`/api/sessions/${s.code}/activities/confirm-ai`);
+    expect(confirmAll.body).toEqual({ confirmed: 1 });
+    expect((await prisma.activity.findUniqueOrThrow({ where: { id: tf!.id } })).aiDraft).toBe(false);
   });
 
   it('generate: an AI failure or timeout is a readable error, never a crash', async () => {
@@ -140,12 +154,13 @@ describe('AI helpers', () => {
       throw aiTimeout();
     });
     const slow = await generate(agent, s.code, { text: SLIDES });
-    expect(slow.error).toMatchObject({ code: 'AI_TIMEOUT' });
-    expect(slow.error!.message).toMatch(/carry on by hand/);
+    expect(slow.job).toMatchObject({ status: 'failed' });
+    expect(slow.error).toMatch(/took too long.*carry on by hand/);
 
     setAiClient(async () => ({ questions: 'nonsense' }));
     const junk = await generate(agent, s.code, { text: SLIDES });
-    expect(junk.error).toMatchObject({ code: 'AI_FAILED' });
+    expect(junk.job).toMatchObject({ status: 'failed' });
+    expect(junk.error).toMatch(/couldn't help/);
     expect(junk.drafts).toEqual([]);
   });
 
@@ -156,11 +171,22 @@ describe('AI helpers', () => {
         { kind: 'TRUE_FALSE', prompt: 'r is between −1 and 1.', correctTrue: true, explanation: 'Yes.' },
       ],
     }));
-    for (let i = 0; i < 20; i++)
-      expect((await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: SLIDES })).status).toBe(
-        200,
-      );
-    expect((await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: SLIDES })).status).toBe(429);
+    for (let i = 0; i < 20; i++) expect((await generate(agent, s.code, { text: SLIDES })).status).toBe(202);
+    expect((await generate(agent, s.code, { text: SLIDES })).status).toBe(429);
+  });
+
+  it('one generation at a time per lecture; ended lectures refuse', async () => {
+    const { agent, s } = await withQuestions([]);
+    const waiting: (() => void)[] = [];
+    setAiClient(() => new Promise((r) => waiting.push(() => r({ questions: [] }))));
+    expect((await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: SLIDES })).status).toBe(202);
+    const second = await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: SLIDES });
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('AI_JOB_RUNNING');
+    waiting.forEach((release) => release());
+    await waitForAiJob(s.id);
+    await agent.post(`/api/sessions/${s.code}/end`);
+    expect((await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: SLIDES })).status).toBe(409);
   });
 });
 

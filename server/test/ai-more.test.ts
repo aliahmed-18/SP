@@ -7,11 +7,13 @@ import type { AiRequest } from '../src/lib/gemini';
 import { hashDevice } from '../src/lib/deviceHash';
 import { aiLimiter } from '../src/routes/ai';
 import { setAiClient } from '../src/services/ai';
+import { clearAiJobs } from '../src/services/ai-job-store';
 import { generate, newDeviceId, newInstructor, newSession, resetDb } from './helpers';
 
 beforeEach(async () => {
   await resetDb();
   aiLimiter.reset();
+  clearAiJobs();
 });
 afterEach(() => setAiClient(null));
 afterAll(() => prisma.$disconnect());
@@ -44,17 +46,16 @@ describe('AI helpers, part 2', () => {
       kinds: ['EXPLAIN'],
       note: 'Focus on the slope',
     });
-    expect(res.status).toBe(200);
-    const drafts = res.drafts;
-    expect(drafts).toEqual([
-      {
-        type: 'EXPLAIN',
-        prompt: "In one sentence: what does b tell you that r doesn't?",
-        modelAnswer: 'b is the change in y per unit of x.',
-      },
+    expect(res.status).toBe(202);
+    expect(res.drafts.map((d) => [d.type, d.prompt, d.modelAnswer, d.aiDraft])).toEqual([
+      [
+        'EXPLAIN',
+        "In one sentence: what does b tell you that r doesn't?",
+        'b is the change in y per unit of x.',
+        true,
+      ],
     ]);
     expect(seen!.prompt).toContain('The lecturer asks: Focus on the slope');
-    expect((await agent.post(`/api/sessions/${s.code}/activities`).send(drafts[0])).status).toBe(201);
   });
 
   it('key points: built from what happened in class, cleaned, nothing saved', async () => {

@@ -1,4 +1,5 @@
 // DTO builders (allow-lists, never spread DB rows) + emit helpers. docs/04 §"Three different views".
+import { aiJobFor } from '../services/ai-job-store';
 import {
   rooms,
   sortTopics,
@@ -76,6 +77,7 @@ export async function buildHostState(sessionId: string): Promise<HostState> {
     stageActivityId: s.presentActivityId,
     projectedTopicId: projectedId(s, 'topic'),
     projectedAnswerId: projectedId(s, 'misconception'),
+    aiJob: aiJobFor(sessionId),
     serverTime: new Date().toISOString(),
   };
 }

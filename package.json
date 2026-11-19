@@ -26,7 +26,8 @@
     "db:reset": "npm run db:reset -w server",
     "load-test": "npm run load-test -w server --",
     "smoke": "node scripts/smoke.mjs",
-    "share": "node scripts/share.mjs"
+    "share": "node scripts/share.mjs",
+    "secrets": "node scripts/secrets.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

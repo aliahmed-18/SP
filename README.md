@@ -45,13 +45,17 @@ Start a session, then join from a phone or a second browser window with the code
 
 ## Let phones join a laptop demo (`npm run share`)
 
+**Once, before sharing:** run `npm run secrets`. It replaces the example `JWT_SECRET` / `DEVICE_SALT` in `.env` (public in this repo, so anyone could fake an instructor login) with strong random values; then restart the app. `npm run share` and the production server refuse to start with the example values.
+
 Phones can't open `localhost`. With the app running (`npm run dev`, or `npm run build && npm start`), run in a second terminal:
 
 ```bash
 npm run share
 ```
 
-It starts a free Cloudflare quick tunnel (no account, https, works on campus Wi-Fi) and prints a public address like `https://xyz.trycloudflare.com`. The QR code and the projector switch to it by themselves; keep working on `localhost`. `Ctrl + C` stops sharing. Install `cloudflared` once first: `winget install --id Cloudflare.cloudflared` (Windows) or `brew install cloudflared` (macOS). For a hosted deployment, set `PUBLIC_URL` instead (optional).
+For the lecture, share the production build (`npm run build`, then `npm start`); the dev server works for a quick test. It starts a free Cloudflare quick tunnel (no account, https, works on campus Wi-Fi) and prints a public address like `https://xyz.trycloudflare.com`. The QR code and the projector switch to it by themselves; keep working on `localhost`. `Ctrl + C` stops sharing. Install `cloudflared` once first: `winget install --id Cloudflare.cloudflared` (Windows) or `brew install cloudflared` (macOS). For a hosted deployment, set `PUBLIC_URL` instead (optional).
+
+What it exposes: only this app — no other files or ports on the laptop — and not your IP or home address (the laptop connects out to Cloudflare; phones only see the `trycloudflare.com` name). The link is random and stops working when you press `Ctrl + C`. Anyone with the link can open the login page, so use your own instructor account, not the public demo password.
 
 ## Commands
 

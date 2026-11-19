@@ -46,4 +46,13 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv();
+
+// The example secrets from .env.example are public: refuse them in production (anyone could forge an
+// instructor login). `npm run secrets` generates strong ones.
+if (env.NODE_ENV === 'production' && [env.JWT_SECRET, env.DEVICE_SALT].some((v) => v.includes('change-me'))) {
+  console.error(
+    '\n[getit] JWT_SECRET / DEVICE_SALT still use the example values. Run `npm run secrets`, then start again.\n',
+  );
+  process.exit(1);
+}
 export const isProd = env.NODE_ENV === 'production';

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '../src/env';
 import type { HttpError } from '../src/lib/errors';
-import { FALLBACK_MODEL, geminiClient, parseJsonLoose } from '../src/lib/gemini';
+import { FALLBACK_MODELS, geminiClient, parseJsonLoose } from '../src/lib/gemini';
 
 const REQ = { system: 'sys', prompt: 'prompt', schema: { type: 'OBJECT' } };
 type Call = { url: string; init: RequestInit & { headers: Record<string, string> } };
@@ -66,20 +66,35 @@ describe('Gemini client', () => {
     expect(body.generationConfig).toMatchObject({
       responseMimeType: 'application/json',
       responseSchema: { type: 'OBJECT' },
-      thinkingConfig: { thinkingLevel: 'low' },
+      thinkingConfig: { thinkingLevel: 'minimal' },
     });
   });
 
-  it('a retired model (404) falls back to gemini-flash-latest', async () => {
+  it('a retired model (404) falls back to the fast alias, then to Flash', async () => {
     respond(fail(404, 'models/gemini-old-model is not found'), ok('{"a":1}'));
     expect(await geminiClient(REQ)).toEqual({ a: 1 });
-    expect(calls[1]!.url).toContain(`/models/${FALLBACK_MODEL}:generateContent`);
+    expect(calls[1]!.url).toContain('/models/gemini-flash-lite-latest:generateContent');
+
+    calls = [];
+    respond(fail(404, 'old gone'), fail(404, 'lite gone'), ok('{"b":2}'));
+    expect(await geminiClient(REQ)).toEqual({ b: 2 });
+    expect(calls.map((c) => c.url.split('/models/')[1])).toEqual([
+      'gemini-old-model:generateContent',
+      'gemini-flash-lite-latest:generateContent',
+      'gemini-flash-latest:generateContent',
+    ]);
   });
 
-  it('a model that rejects the thinking setting is retried without it', async () => {
-    respond(fail(400, 'Unknown name "thinkingLevel" at generation_config.thinking_config'), ok('{"a":1}'));
+  it('minimal thinking first; a model that rejects a level gets the next, then none', async () => {
+    const bad = () => fail(400, 'thinking_level "minimal" is not supported for this model');
+    respond(bad(), ok('{"a":1}'));
     expect(await geminiClient(REQ)).toEqual({ a: 1 });
-    expect(sentBody(1).generationConfig.thinkingConfig).toBeUndefined();
+    expect(sentBody(1).generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
+
+    calls = [];
+    respond(bad(), bad(), ok('{"a":2}'));
+    expect(await geminiClient(REQ)).toEqual({ a: 2 });
+    expect(sentBody(2).generationConfig.thinkingConfig).toBeUndefined();
   });
 
   it('bad key, quota, timeout, other errors → readable errors that mention carrying on by hand', async () => {
@@ -101,11 +116,11 @@ describe('Gemini client', () => {
     expect(await error(geminiClient(REQ))).toMatchObject({ code: 'AI_FAILED' });
   });
 
-  it('never loops: a 404 on the fallback model itself stops', async () => {
-    env.GEMINI_MODEL = FALLBACK_MODEL;
-    respond(fail(404, 'not found'));
+  it('never loops: each model is tried once, then a readable error', async () => {
+    env.GEMINI_MODEL = FALLBACK_MODELS.at(-1)!;
+    respond(fail(404, 'not found'), fail(404, 'not found'));
     expect(await error(geminiClient(REQ))).toMatchObject({ code: 'AI_FAILED' });
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(FALLBACK_MODELS.length);
   });
 
   it('no key → AI_OFF without any network call', async () => {

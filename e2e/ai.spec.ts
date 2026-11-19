@@ -112,6 +112,7 @@ test('AI failure is a readable message and the manual flow stays', async ({ page
   await expect(dialog.getByTestId('ai-error')).toContainText('The AI took too long');
   await expect(dialog.getByLabel('Or paste slide text or notes')).toHaveValue(SLIDES); // paste kept
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden(); // fully closed before the next click
   await page
     .getByRole('button', { name: /Multiple choice/ })
     .first()

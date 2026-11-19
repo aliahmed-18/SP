@@ -9,6 +9,7 @@ import {
 } from '@getit/shared';
 import { prisma } from '../db';
 import { env } from '../env';
+import { splitForBatches } from '../lib/ai-batches';
 import { toAnswerGroups, toDrafts, toKeyPoints, toSuggestions } from '../lib/ai-output';
 import { HttpError } from '../lib/errors';
 import { aiFailed, geminiClient, type AiClient } from '../lib/gemini';
@@ -134,27 +135,46 @@ export async function generateQuickChecks(input: {
   kinds: AiGenerateKind[];
   note: string;
 }): Promise<AiGenerateResult> {
-  const raw = await client({
-    system:
-      'You write short checks a university lecturer runs live in class to see whether students understood. ' +
-      SAFETY,
-    prompt: [
-      `Write ${input.count} questions on the most important ideas in the lecture material below.`,
-      `Use only these types: ${input.kinds.join(', ')}. Mix them if more than one is allowed.`,
-      ...input.kinds.map((k) => `- ${KIND_RULES[k]}`),
-      '- Each question tests understanding (not memorising a slide), fits on a phone screen and takes under a minute.',
-      '- explanation: 1–2 sentences saying why the answer is right.',
-      '- Write in the same language as the material. Never ask about slide numbers, layout or the lecturer.',
-      ...(input.note ? [`- The lecturer asks: ${input.note}`] : []),
-      '',
-      '<material>',
-      input.text,
-      '</material>',
-    ].join('\n'),
-    schema: checksSchema,
-  });
-  const drafts = toDrafts(raw, input.kinds, input.count);
-  if (drafts.length === 0) throw aiFailed();
+  const batches = splitForBatches(input.text, input.count);
+  const results = await Promise.allSettled(
+    batches.map((b, i) =>
+      client({
+        system:
+          'You write short checks a university lecturer runs live in class to see whether students understood. ' +
+          SAFETY,
+        prompt: [
+          `Write ${b.count} ${b.count === 1 ? 'question' : 'questions'} on the most important ideas in the lecture material below` +
+            (batches.length > 1 ? ` (part ${i + 1} of ${batches.length} of the lecture).` : '.'),
+          `Use only these types: ${input.kinds.join(', ')}. Mix them if more than one is allowed.`,
+          ...input.kinds.map((k) => `- ${KIND_RULES[k]}`),
+          '- Each question tests understanding (not memorising a slide), fits on a phone screen and takes under a minute.',
+          '- explanation: 1–2 sentences saying why the answer is right.',
+          '- Write in the same language as the material. Never ask about slide numbers, layout or the lecturer.',
+          ...(input.note ? [`- The lecturer asks: ${input.note}`] : []),
+          '',
+          '<material>',
+          b.text,
+          '</material>',
+        ].join('\n'),
+        schema: checksSchema,
+      }).then((raw) => toDrafts(raw, input.kinds, b.count)),
+    ),
+  );
+  // Keep whatever succeeded (one slow or failed part shouldn't lose the rest); no duplicate prompts.
+  const seen = new Set<string>();
+  const drafts = results
+    .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    .filter((d) => {
+      const key = d.prompt.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, input.count);
+  if (drafts.length === 0) {
+    const failure = results.find((r) => r.status === 'rejected');
+    throw failure ? failure.reason : aiFailed();
+  }
   return { drafts };
 }
 

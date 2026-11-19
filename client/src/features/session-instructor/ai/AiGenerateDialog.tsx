@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { KIND_ICON, KIND_LABEL } from '../activities/kinds';
 import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
 import { AiDraftCard } from './AiDraftCard';
+import { Elapsed } from './Elapsed';
 import { AiSourceFields } from './AiSourceFields';
 import { sourceText, type SourceFile } from './source-text';
 
@@ -106,7 +107,9 @@ export function AiGenerateDialog({
           <div className="flex flex-col items-center gap-3 py-10 text-center" role="status">
             <Spinner decorative className="!size-8" />
             <p className="font-medium">Preparing drafts…</p>
-            <p className="text-sm text-muted-foreground">This can take up to a minute.</p>
+            <p className="text-sm text-muted-foreground">
+              Working… <Elapsed />
+            </p>
           </div>
         ) : drafts ? (
           <ul className="flex flex-col gap-3" data-testid="ai-drafts">

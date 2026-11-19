@@ -63,38 +63,26 @@ describe('Gemini client', () => {
     const body = sentBody(0);
     expect(body.systemInstruction.parts[0].text).toBe('sys');
     expect(body.contents[0].parts[0].text).toBe('prompt');
+    expect(body.generationConfig.thinkingConfig).toBeUndefined(); // full thinking: quality first
     expect(body.generationConfig).toMatchObject({
       responseMimeType: 'application/json',
       responseSchema: { type: 'OBJECT' },
-      thinkingConfig: { thinkingLevel: 'minimal' },
     });
   });
 
-  it('a retired model (404) falls back to the fast alias, then to Flash', async () => {
+  it('a retired model (404) falls back to Flash, then Flash-Lite', async () => {
     respond(fail(404, 'models/gemini-old-model is not found'), ok('{"a":1}'));
     expect(await geminiClient(REQ)).toEqual({ a: 1 });
-    expect(calls[1]!.url).toContain('/models/gemini-flash-lite-latest:generateContent');
+    expect(calls[1]!.url).toContain('/models/gemini-flash-latest:generateContent');
 
     calls = [];
-    respond(fail(404, 'old gone'), fail(404, 'lite gone'), ok('{"b":2}'));
+    respond(fail(404, 'old gone'), fail(404, 'flash gone'), ok('{"b":2}'));
     expect(await geminiClient(REQ)).toEqual({ b: 2 });
     expect(calls.map((c) => c.url.split('/models/')[1])).toEqual([
       'gemini-old-model:generateContent',
-      'gemini-flash-lite-latest:generateContent',
       'gemini-flash-latest:generateContent',
+      'gemini-flash-lite-latest:generateContent',
     ]);
-  });
-
-  it('minimal thinking first; a model that rejects a level gets the next, then none', async () => {
-    const bad = () => fail(400, 'thinking_level "minimal" is not supported for this model');
-    respond(bad(), ok('{"a":1}'));
-    expect(await geminiClient(REQ)).toEqual({ a: 1 });
-    expect(sentBody(1).generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
-
-    calls = [];
-    respond(bad(), bad(), ok('{"a":2}'));
-    expect(await geminiClient(REQ)).toEqual({ a: 2 });
-    expect(sentBody(2).generationConfig.thinkingConfig).toBeUndefined();
   });
 
   it('bad key, quota, timeout, other errors → readable errors that mention carrying on by hand', async () => {

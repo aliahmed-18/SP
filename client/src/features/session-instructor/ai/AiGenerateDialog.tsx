@@ -108,7 +108,7 @@ export function AiGenerateDialog({
             <Spinner decorative className="!size-8" />
             <p className="font-medium">Preparing drafts…</p>
             <p className="text-sm text-muted-foreground">
-              Working… <Elapsed />
+              Checking every answer can take a minute or two. <Elapsed />
             </p>
           </div>
         ) : drafts ? (

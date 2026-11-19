@@ -7,7 +7,7 @@ import { HttpError } from './errors';
  * flow always stays available (docs/06: "Must fail gracefully").
  *
  * Model names change (gemini-2.5-flash shuts down on 2026-12-01), so the default is Google's alias for
- * the newest Flash-Lite model (the fastest), and a retired model falls back instead of breaking the demo.
+ * the newest Flash model, and a retired model falls back instead of breaking the demo.
  */
 export type AiRequest = {
   system: string;
@@ -17,14 +17,13 @@ export type AiRequest = {
 };
 export type AiClient = (req: AiRequest) => Promise<unknown>;
 
-/** Fast by default (in class, seconds matter). GEMINI_MODEL=gemini-flash-latest trades speed for depth. */
-export const DEFAULT_MODEL = 'gemini-flash-lite-latest';
+/** Quality first: Google's newest Flash model with its full thinking (a minute or two is fine). */
+export const DEFAULT_MODEL = 'gemini-flash-latest';
 /** A retired / unknown model (404) moves down this list instead of breaking the demo. */
-export const FALLBACK_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest'];
-const TIMEOUT_MS = 45_000;
+export const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
+/** Thinking models can take a while on a full lecture; the instructor sees a running timer. */
+const TIMEOUT_MS = 150_000;
 const API = 'https://generativelanguage.googleapis.com/v1beta/models';
-/** Least thinking first (fast); a model that rejects a level gets the next; null = model default. */
-const THINKING = ['minimal', 'low', null] as const;
 
 export const aiTimeout = () =>
   new HttpError(504, 'AI_TIMEOUT', 'The AI took too long. Try again, or carry on by hand.');
@@ -37,9 +36,7 @@ const aiKey = () =>
     "The AI key isn't valid. Check GEMINI_API_KEY in .env, then restart the server. You can carry on by hand.",
   );
 
-type Attempt = { model: string; thinking: (typeof THINKING)[number] };
-
-function body({ system, prompt, schema }: AiRequest, thinking: Attempt['thinking']) {
+function body({ system, prompt, schema }: AiRequest) {
   return JSON.stringify({
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -48,17 +45,16 @@ function body({ system, prompt, schema }: AiRequest, thinking: Attempt['thinking
       maxOutputTokens: 8192,
       responseMimeType: 'application/json',
       responseSchema: schema,
-      ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
     },
   });
 }
 
-async function call(req: AiRequest, a: Attempt, key: string): Promise<Response> {
+async function call(req: AiRequest, model: string, key: string): Promise<Response> {
   try {
-    return await fetch(`${API}/${encodeURIComponent(a.model)}:generateContent`, {
+    return await fetch(`${API}/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-      body: body(req, a.thinking),
+      body: body(req),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
@@ -93,12 +89,10 @@ export const geminiClient: AiClient = async (req) => {
   const key = env.GEMINI_API_KEY;
   if (!key) throw new HttpError(503, 'AI_OFF', "AI isn't set up on this server.");
   const models = [...new Set([env.GEMINI_MODEL, ...FALLBACK_MODELS])];
-  let m = 0;
-  let t = 0;
-  for (let tries = 0; tries < 6; tries++) {
-    const attempt: Attempt = { model: models[m]!, thinking: THINKING[t]! };
+  for (let m = 0; m < models.length; m++) {
+    const model = models[m]!;
     const started = Date.now();
-    const res = await call(req, attempt, key);
+    const res = await call(req, model, key);
     if (res.ok) {
       const json = (await res.json().catch(() => null)) as {
         candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[];
@@ -109,7 +103,7 @@ export const geminiClient: AiClient = async (req) => {
           .map((p) => p.text ?? '')
           .join('') ?? '';
       // One line per AI call, so slowness can be measured on the instructor's machine.
-      console.log(`[getit] AI ${attempt.model} answered in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+      console.log(`[getit] AI ${model} answered in ${((Date.now() - started) / 1000).toFixed(1)} s`);
       const value = parseJsonLoose(text);
       if (value === undefined) {
         console.error('[getit] AI returned no usable JSON');
@@ -119,7 +113,7 @@ export const geminiClient: AiClient = async (req) => {
     }
     // Log the provider's message for the team; never forward it (it can mention the key or quota).
     const detail = (await res.text().catch(() => '')).slice(0, 500);
-    console.error(`[getit] AI error ${res.status} (${attempt.model}): ${detail}`);
+    console.error(`[getit] AI error ${res.status} (${model}): ${detail}`);
     if (res.status === 429)
       throw new HttpError(
         429,
@@ -128,13 +122,8 @@ export const geminiClient: AiClient = async (req) => {
       );
     if (res.status === 401 || res.status === 403 || /API_KEY_INVALID|API key not valid/i.test(detail))
       throw aiKey();
-    if (res.status === 400 && attempt.thinking && /thinking/i.test(detail) && t < THINKING.length - 1) {
-      t++;
-      continue;
-    }
     if (res.status === 404 && m < models.length - 1) {
-      console.error(`[getit] AI model "${attempt.model}" not found; trying ${models[m + 1]}`);
-      m++;
+      console.error(`[getit] AI model "${model}" not found; trying ${models[m + 1]}`);
       continue;
     }
     throw aiFailed();

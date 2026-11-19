@@ -17,6 +17,7 @@ import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { TAG_LABEL, TAG_STYLE } from '../activities/explain-tags';
 import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
+import { Elapsed } from './Elapsed';
 
 /**
  * "Sort answers with AI" (MVP: the AI groups Explain answers so misconceptions stand out). Shows groups
@@ -71,6 +72,9 @@ export function AiSortDialog({ activity: a, onClose }: { activity: HostActivity;
           <div className="flex flex-col items-center gap-3 py-10 text-center" role="status">
             <Spinner decorative className="!size-8" />
             <p className="font-medium">Reading the answers…</p>
+            <p className="text-sm text-muted-foreground">
+              This can take up to a minute. <Elapsed />
+            </p>
           </div>
         ) : sort.isError ? (
           <div className="flex flex-col items-center gap-3 py-8 text-center" data-testid="ai-error">

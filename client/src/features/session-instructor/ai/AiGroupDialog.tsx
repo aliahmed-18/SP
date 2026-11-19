@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
+import { Elapsed } from './Elapsed';
 
 type Row = AiTopicSuggestion & { on: boolean };
 
@@ -130,7 +131,9 @@ export function AiGroupDialog({
           <div className="flex flex-col items-center gap-3 py-10 text-center" role="status">
             <Spinner decorative className="!size-8" />
             <p className="font-medium">Reading the questions…</p>
-            <p className="text-sm text-muted-foreground">This takes a few seconds.</p>
+            <p className="text-sm text-muted-foreground">
+              This can take up to a minute. <Elapsed />
+            </p>
           </div>
         ) : suggest.isError ? (
           <div className="flex flex-col items-center gap-3 py-8 text-center" data-testid="ai-error">

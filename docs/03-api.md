@@ -28,7 +28,7 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 | GET | `/sessions/:code/host` | full **instructor snapshot** (see events doc `HostState`) |
 | POST | `/sessions/:code/end` | ends session, creates Takeaway draft |
 | GET | `/sessions/:code/host` (ended) | **is** the ended-session summary: the host page of an ended session shows every question, topic, result and the Take-away editor (no separate summary endpoint) |
-| GET | `/sessions/:id/export.xlsx` | Excel export (owner only): sheets Questions, Topics, Quick Checks, Explain. Text is written as text, never formulas; no identities |
+| GET | `/sessions/:id/export.xlsx` | Excel export (owner only), branded: **Summary** (logo, lecture details, key numbers, Take-away, most-asked topics, Quick Check overview coloured by result, Explain tag counts) then sortable sheets Questions, Topics, Quick Checks, Answers (one row per answer choice), Explain — filters, frozen headers, RTL for Arabic, print-ready. Text is written as text, never formulas; no identities |
 
 ## Activities (instructor)
 | POST | `/sessions/:code/activities` | Quick Check or Explain draft (shared zod `activityDraftSchema`); Explain = `{ type: 'EXPLAIN', prompt, modelAnswer? }` |

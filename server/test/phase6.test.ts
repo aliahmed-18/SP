@@ -313,7 +313,38 @@ describe('Excel export', () => {
     );
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(res.body as never); // exceljs types predate Node 22's generic Buffer
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Questions', 'Topics', 'Quick Checks', 'Explain']);
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      'Summary',
+      'Questions',
+      'Topics',
+      'Quick Checks',
+      'Answers',
+      'Explain',
+    ]);
+    // Summary: the brand logo, the lecture, key numbers, Take-away / topics / Quick Check overview.
+    const summary = wb.getWorksheet('Summary')!;
+    expect(summary.getImages()).toHaveLength(1);
+    const summaryText = summary
+      .getSheetValues()
+      .flat(2)
+      .map((v) => (v && typeof v === 'object' && 'richText' in v ? '' : String(v ?? '')))
+      .join('|');
+    for (const t of [
+      'Regression',
+      'Students joined',
+      'Formulas',
+      'Q1. Correlation proves causation.',
+      'Move on',
+    ])
+      expect(summaryText).toContain(t);
+    // Answers: one row per answer choice, the correct one marked.
+    const answers = wb.getWorksheet('Answers')!;
+    expect(answers.getRow(1).values).toEqual(
+      expect.arrayContaining(['Question', 'Round', 'Answer', 'Correct', 'Responses', '% of responses']),
+    );
+    expect(answers.getRow(3).values).toEqual(
+      expect.arrayContaining(['Correlation proves causation.', 1, 'False', '✓', 1, 1]),
+    );
     const cell = wb.getWorksheet('Questions')!.getRow(2).getCell(3);
     expect(cell.value).toBe('=HYPERLINK("http://evil")'); // stored as text…
     expect(cell.type).toBe(ExcelJS.ValueType.String); // …never as a formula

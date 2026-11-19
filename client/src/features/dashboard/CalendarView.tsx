@@ -7,30 +7,27 @@ import { dayKey, fmt, sameDay } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { lectureTime } from './lecture-time';
 
-const CHIP = {
-  SCHEDULED: 'bg-primary/15 text-primary hover:bg-primary/25',
-  LIVE: 'bg-attention/20 text-attention-foreground hover:bg-attention/30 dark:text-attention',
-  ENDED: 'bg-muted text-muted-foreground hover:bg-muted/70',
+const STATUS_DOT = {
+  SCHEDULED: 'bg-primary',
+  LIVE: 'bg-attention',
+  ENDED: 'bg-muted-foreground/40',
 } as const;
-const DOT = { SCHEDULED: 'bg-primary', LIVE: 'bg-attention', ENDED: 'bg-muted-foreground/50' } as const;
 const STATUS_LABEL = { SCHEDULED: 'Planned', LIVE: 'Live', ENDED: 'Ended' } as const;
 
 /** The 6 weeks (Monday first) that show a month. */
 function monthGrid(month: Date) {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const offset = (first.getDay() + 6) % 7; // Monday = 0
-  const start = new Date(first);
-  start.setDate(first.getDate() - offset);
   return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
+    const d = new Date(first);
+    d.setDate(first.getDate() - offset + i);
     return d;
   });
 }
 
 /**
- * Dashboard calendar: every lecture (planned, live, past) on a month grid. Pick a day to see its
- * lectures and plan a new one there; planned lectures open their page to prepare them.
+ * Mini month calendar (sidebar) + the chosen day's agenda. A dot per lecture (planned, live, ended);
+ * pick a day to see its lectures, open them, or plan a new one on that day.
  */
 export function CalendarView({
   sessions,
@@ -55,27 +52,30 @@ export function CalendarView({
   const shift = (n: number) => setMonth((m) => new Date(m.getFullYear(), m.getMonth() + n, 1));
   const selectedList = byDay.get(dayKey(selected)) ?? [];
   const selectedPast = dayKey(selected) < dayKey(today);
+  const onThisMonth = month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth();
 
   return (
     <section
       aria-labelledby="calendar-title"
-      className="rounded-2xl border bg-card p-4 sm:p-5"
+      className="rounded-2xl border bg-card p-4 shadow-xs"
       data-testid="calendar"
     >
-      <div className="mb-4 flex items-center gap-2">
-        <h2 id="calendar-title" className="min-w-0 flex-1 text-lg font-semibold" aria-live="polite">
+      <div className="mb-2 flex items-center gap-1">
+        <h2 id="calendar-title" className="min-w-0 flex-1 font-semibold" aria-live="polite">
           {fmt.month.format(month)}
         </h2>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-            setSelected(today);
-          }}
-        >
-          Today
-        </Button>
+        {!onThisMonth && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+              setSelected(today);
+            }}
+          >
+            Today
+          </Button>
+        )}
         <Button variant="ghost" size="icon" onClick={() => shift(-1)} aria-label="Previous month">
           <ChevronLeft className="size-5" />
         </Button>
@@ -84,17 +84,14 @@ export function CalendarView({
         </Button>
       </div>
 
-      <div
-        className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground"
-        aria-hidden
-      >
+      <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground" aria-hidden>
         {days.slice(0, 7).map((d) => (
-          <span key={d.toISOString()} className="pb-1">
-            {fmt.weekday.format(d)}
+          <span key={d.toISOString()} className="py-1">
+            {fmt.weekday.format(d).slice(0, 2)}
           </span>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1" role="grid" aria-label={fmt.month.format(month)}>
+      <div className="grid grid-cols-7 gap-y-0.5" role="grid" aria-label={fmt.month.format(month)}>
         {days.map((d) => {
           const list = byDay.get(dayKey(d)) ?? [];
           const inMonth = d.getMonth() === month.getMonth();
@@ -105,64 +102,60 @@ export function CalendarView({
               key={d.toISOString()}
               role="gridcell"
               aria-selected={isSelected}
-              className={cn(
-                'relative flex min-h-12 flex-col rounded-lg border text-left transition-colors sm:min-h-24',
-                inMonth ? 'bg-background' : 'bg-transparent opacity-50',
-                isSelected ? 'border-primary ring-1 ring-primary' : 'border-transparent hover:border-border',
-              )}
+              className="grid place-items-center"
             >
               <button
                 type="button"
-                onClick={() => setSelected(d)}
-                className="absolute inset-0 rounded-lg"
+                onClick={() => {
+                  setSelected(d);
+                  if (!inMonth) setMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                }}
                 aria-label={`${fmt.longDay.format(d)}${list.length ? `, ${list.length} ${list.length === 1 ? 'lecture' : 'lectures'}` : ''}`}
+                aria-current={isToday ? 'date' : undefined}
                 data-testid={`day-${dayKey(d)}`}
-              />
-              <span
                 className={cn(
-                  'pointer-events-none m-1 grid size-7 place-items-center rounded-full text-sm',
-                  isToday && 'bg-primary font-semibold text-primary-foreground',
+                  'relative flex size-11 flex-col items-center justify-center rounded-xl text-sm tabular-nums transition-colors',
+                  !inMonth && 'text-muted-foreground/50',
+                  isSelected
+                    ? 'bg-primary font-semibold text-primary-foreground'
+                    : isToday
+                      ? 'bg-accent font-semibold text-primary'
+                      : 'hover:bg-muted',
                 )}
               >
                 {d.getDate()}
-              </span>
-              {/* Phones: a dot per lecture. Wider: the time and topic, each a link to the lecture. */}
-              <span
-                className="pointer-events-none flex flex-wrap justify-center gap-0.5 px-1 pb-1 sm:hidden"
-                aria-hidden
-              >
-                {list.slice(0, 3).map((s) => (
-                  <span key={s.id} className={cn('size-1.5 rounded-full', DOT[s.status])} />
-                ))}
-              </span>
-              <span className="relative hidden flex-col gap-0.5 px-1 pb-1 sm:flex">
-                {list.slice(0, 2).map((s) => (
-                  <Link
-                    key={s.id}
-                    to={`/s/${s.code}/host`}
-                    className={cn(
-                      'truncate rounded px-1 py-0.5 text-[11px] leading-tight font-medium',
-                      CHIP[s.status],
-                    )}
-                    title={`${fmt.time.format(lectureTime(s))} ${s.topic}`}
-                  >
-                    {fmt.time.format(lectureTime(s))} <span dir="auto">{s.topic}</span>
-                  </Link>
-                ))}
-                {list.length > 2 && (
-                  <span className="pointer-events-none px-1 text-[11px] text-muted-foreground">
-                    +{list.length - 2} more
-                  </span>
-                )}
-              </span>
+                <span className="absolute bottom-1.5 flex gap-0.5" aria-hidden>
+                  {list.slice(0, 3).map((s) => (
+                    <span
+                      key={s.id}
+                      className={cn(
+                        'size-1 rounded-full',
+                        isSelected ? 'bg-primary-foreground' : STATUS_DOT[s.status],
+                      )}
+                    />
+                  ))}
+                </span>
+              </button>
             </div>
           );
         })}
       </div>
+      <div
+        className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground"
+        aria-hidden
+      >
+        {(['SCHEDULED', 'LIVE', 'ENDED'] as const).map((st) => (
+          <span key={st} className="flex items-center gap-1.5">
+            <span className={cn('size-1.5 rounded-full', STATUS_DOT[st])} /> {STATUS_LABEL[st]}
+          </span>
+        ))}
+      </div>
 
       <div className="mt-4 border-t pt-4" data-testid="calendar-day">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold">{fmt.longDay.format(selected)}</h3>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">
+            {sameDay(selected, today) ? 'Today' : fmt.longDay.format(selected)}
+          </h3>
           {!selectedPast && (
             <Button size="sm" variant="outline" onClick={() => onPlan(selected)}>
               <CalendarPlus /> Plan a lecture
@@ -170,23 +163,25 @@ export function CalendarView({
           )}
         </div>
         {selectedList.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="py-2 text-sm text-muted-foreground">
             {selectedPast ? 'No lectures on this day.' : 'Nothing planned yet.'}
           </p>
         ) : (
-          <ul className="flex flex-col gap-1.5">
+          <ul className="-mx-2 flex flex-col">
             {selectedList.map((s) => (
               <li key={s.id}>
                 <Link
                   to={`/s/${s.code}/host`}
-                  className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm hover:bg-muted"
+                  className="flex min-h-11 items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-muted"
                 >
-                  <span className={cn('size-2 shrink-0 rounded-full', DOT[s.status])} aria-hidden />
-                  <span className="w-12 shrink-0 tabular-nums">{fmt.time.format(lectureTime(s))}</span>
+                  <span className={cn('size-2 shrink-0 rounded-full', STATUS_DOT[s.status])} aria-hidden />
+                  <span className="w-11 shrink-0 text-muted-foreground tabular-nums">
+                    {fmt.time.format(lectureTime(s))}
+                  </span>
                   <span className="min-w-0 flex-1 truncate font-medium" dir="auto">
                     {s.topic}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{STATUS_LABEL[s.status]}</span>
+                  <span className="sr-only">{STATUS_LABEL[s.status]}</span>
                 </Link>
               </li>
             ))}

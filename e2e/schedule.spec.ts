@@ -93,3 +93,26 @@ test('edit and cancel a planned lecture', async ({ page }) => {
   await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel lecture' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
 });
+
+test('dashboard: Next up card, Upcoming / Past tabs and search', async ({ page }) => {
+  await loginTestInstructor(page);
+  const topic = `Searchable ${Date.now()}`;
+  await page.getByRole('button', { name: 'Plan a lecture' }).first().click();
+  await page.getByRole('dialog').getByLabel('Lecture topic').fill(topic);
+  await page.getByRole('dialog').getByRole('button', { name: 'Plan lecture' }).click();
+  await expect(page.getByTestId('scheduled-banner')).toBeVisible();
+
+  await page.goto('/dashboard');
+  await expect(page.getByTestId('next-up')).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search lectures' }).fill(topic);
+  await expect(page.getByTestId('upcoming').getByRole('link')).toHaveCount(1);
+  await expect(page.getByTestId('upcoming')).toContainText(topic);
+  await page.getByRole('tab', { name: /^Past/ }).click();
+  await expect(page.getByText(/No lectures match/)).toBeVisible();
+
+  // Clean up so later runs keep a short Upcoming list.
+  const code = (await page.request.get('/api/sessions').then((r) => r.json())).find(
+    (s: { topic: string }) => s.topic === topic,
+  ).code as string;
+  expect((await page.request.delete(`/api/sessions/${code}`)).status()).toBe(204);
+});

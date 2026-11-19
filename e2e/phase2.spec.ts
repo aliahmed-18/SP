@@ -72,6 +72,7 @@ test('register → course → start session → 2 phones join → live joined co
 
   // Dashboard lists it as ended with 2 joined.
   await page.goto('/dashboard');
+  await page.getByRole('tab', { name: /^Past/ }).click();
   await expect(
     page
       .getByRole('list', { name: 'Sessions' })
@@ -85,7 +86,12 @@ test('seeded demo account logs in and sees last week’s lecture', async ({ page
   await page.getByLabel('Password').fill('getit-demo-2026');
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await page
+    .getByRole('navigation', { name: 'Courses' })
+    .getByRole('button', { name: /ITCS 444/ })
+    .click();
   await expect(page.getByRole('heading', { name: 'ITCS 444 — Mobile Development' })).toBeVisible();
+  await page.getByRole('tab', { name: /^Past/ }).click();
   await expect(
     page
       .getByRole('list', { name: 'Sessions' })

@@ -162,6 +162,7 @@ test('the demo, start to finish', async ({ page, context, browser }) => {
   ]);
   expect(xlsx.suggestedFilename()).toMatch(/\.xlsx$/);
   await page.goto('/dashboard');
+  await page.getByRole('tab', { name: /^Past/ }).click();
   // This session's own row (other runs may have left sessions with the same title).
   await expect(
     page.getByRole('list', { name: 'Sessions' }).locator(`a[href="/s/${code}/host"]`),

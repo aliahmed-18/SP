@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { CalendarPlus, FolderPlus, MoreHorizontal, Pencil, Play, Radio, Trash2 } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router';
+import { CalendarPlus, FolderPlus, MoreHorizontal, Pencil, Play, Trash2 } from 'lucide-react';
+import { useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { LoadingState } from '@/components/brand/brand';
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -24,15 +24,17 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UserMenu } from '@/features/auth/UserMenu';
 import { useMe } from '@/features/auth/use-me';
+import { fmt } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { CalendarView } from './CalendarView';
 import { CourseDialog } from './CourseDialog';
 import { useCourses, useDeleteCourse, useSessions } from './queries';
-import { SessionList } from './SessionList';
+import { LectureList } from './LectureList';
+import { LiveNow, NextUp } from './NextUp';
 import { StartSessionDialog } from './StartSessionDialog';
-import { UpcomingList } from './UpcomingList';
 
 const NO_COURSE = 'none';
+const ALL = 'all';
 
 export function DashboardPage() {
   const me = useMe();
@@ -73,24 +75,46 @@ export function DashboardPage() {
 
   const requested = params.get('course');
   const selectedId =
-    requested && (requested === NO_COURSE || courses.data.some((c) => c.id === requested))
-      ? requested
-      : (courses.data[0]?.id ?? (orphanSessions.length ? NO_COURSE : null));
+    requested && (requested === NO_COURSE || courses.data.some((c) => c.id === requested)) ? requested : ALL;
   const selectedCourse = courses.data.find((c) => c.id === selectedId);
   const visibleSessions =
-    selectedId === NO_COURSE ? orphanSessions : sessions.data.filter((s) => s.courseId === selectedId);
-  const select = (id: string) => setParams({ course: id }, { replace: true });
+    selectedId === ALL
+      ? sessions.data
+      : selectedId === NO_COURSE
+        ? orphanSessions
+        : sessions.data.filter((s) => s.courseId === selectedId);
+  const select = (id: string) => setParams(id === ALL ? {} : { course: id }, { replace: true });
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  })();
+  const nextPlanned = sessions.data
+    .filter((s) => s.status === 'SCHEDULED' && s.scheduledFor)
+    .sort((a, b) => Date.parse(a.scheduledFor!) - Date.parse(b.scheduledFor!))[0];
+  const chip = (active: boolean) =>
+    cn(
+      'flex min-h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors',
+      active
+        ? 'border-primary bg-primary text-primary-foreground'
+        : 'bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
+    );
+  const count = (active: boolean) =>
+    cn('text-xs tabular-nums', active ? 'text-primary-foreground/80' : 'text-muted-foreground');
 
   return (
     <div className="min-h-dvh">
       <AppHeader right={<UserMenu />} />
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-muted-foreground">Welcome{me.data ? `, ${me.data.name}` : ''}</p>
-            <h1 className="text-3xl font-semibold">Your lectures</h1>
+            <p className="text-sm text-muted-foreground">
+              {greeting}
+              {me.data ? `, ${me.data.name}` : ''} · {fmt.longDay.format(new Date())}
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight">Your lectures</h1>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
             <Button size="lg" variant="outline" onClick={() => openStart('plan')}>
               <CalendarPlus /> Plan a lecture
             </Button>
@@ -100,139 +124,113 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {liveSessions.length > 0 && (
-          <section aria-label="Live now" className="mb-6 flex flex-col gap-2">
-            {liveSessions.map((s) => (
-              <Link
-                key={s.id}
-                to={`/s/${s.code}/host`}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-attention/40 bg-attention/10 p-4 hover:bg-attention/15"
-              >
-                <Radio className="size-5 text-attention-foreground dark:text-attention" aria-hidden />
-                <span className="font-medium">Live now:</span>
-                <span className="min-w-0 flex-1 truncate" dir="auto">
-                  {s.topic}
-                </span>
-                <span className="font-semibold tracking-widest">{s.code}</span>
-                <span className="text-sm font-medium text-primary">Open →</span>
-              </Link>
-            ))}
-          </section>
-        )}
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="flex min-w-0 flex-col gap-6">
+            <LiveNow sessions={liveSessions} />
+            <NextUp session={nextPlanned} courses={courses.data} onPlan={() => openStart('plan')} />
 
-        {/* Calendar: every lecture by day; plan new ones; the next planned ones beside it. */}
-        <div className="mb-8 grid gap-6 lg:grid-cols-[1fr_22rem]">
-          <CalendarView sessions={sessions.data} onPlan={(day) => openStart('plan', day)} />
-          <UpcomingList sessions={sessions.data} courses={courses.data} />
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
-          <nav aria-label="Courses" className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-muted-foreground">Courses</h2>
-              <Button variant="ghost" size="sm" onClick={() => setCourseDialog('new')}>
-                <FolderPlus /> New course
-              </Button>
-            </div>
-            {courses.data.length === 0 && (
-              <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                No courses yet. Create one to group your lectures.
-              </p>
-            )}
-            <ul className="flex flex-col gap-1">
-              {courses.data.map((c) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => select(c.id)}
-                    aria-current={c.id === selectedId ? 'page' : undefined}
-                    className={cn(
-                      'flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm',
-                      c.id === selectedId ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted',
-                    )}
-                  >
-                    <span className="truncate">{c.name}</span>
-                    <span className="text-xs text-muted-foreground">{c.sessionCount}</span>
-                  </button>
-                </li>
-              ))}
-              {orphanSessions.length > 0 && (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => select(NO_COURSE)}
-                    aria-current={selectedId === NO_COURSE ? 'page' : undefined}
-                    className={cn(
-                      'flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm italic',
-                      selectedId === NO_COURSE
-                        ? 'bg-accent font-medium text-accent-foreground'
-                        : 'hover:bg-muted',
-                    )}
-                  >
-                    <span>Other sessions</span>
-                    <span className="text-xs text-muted-foreground">{orphanSessions.length}</span>
-                  </button>
-                </li>
-              )}
-            </ul>
-          </nav>
-
-          <section aria-labelledby="course-title" className="min-w-0">
-            {selectedId ? (
-              <>
-                <div className="mb-4 flex items-center gap-2">
-                  <h2 id="course-title" className="min-w-0 flex-1 truncate text-xl font-semibold">
-                    {selectedCourse?.name ?? 'Other sessions'}
-                  </h2>
-                  {selectedCourse && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label="Course options">
-                          <MoreHorizontal className="size-5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setCourseDialog('rename')}>
-                          <Pencil /> Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
-                          <Trash2 /> Delete course
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-                {visibleSessions.length ? (
-                  <SessionList sessions={visibleSessions} />
-                ) : (
-                  <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed p-10 text-center">
-                    <p className="font-medium">No sessions yet</p>
-                    <p className="text-sm text-muted-foreground">Start a session when your lecture begins.</p>
-                    <Button onClick={() => openStart('now')}>
-                      <Play /> Start session
-                    </Button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed p-10 text-center">
-                <h2 id="course-title" className="font-medium">
-                  Welcome to Getit
+            <section aria-labelledby="course-title" className="flex min-w-0 flex-col gap-4">
+              <div className="flex items-center gap-2">
+                <h2 id="course-title" className="min-w-0 flex-1 truncate text-xl font-semibold">
+                  {selectedCourse?.name ?? (selectedId === NO_COURSE ? 'Other sessions' : 'All lectures')}
                 </h2>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  Create a course for your lectures, or start a session right away.
-                </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <Button variant="outline" onClick={() => setCourseDialog('new')}>
-                    <FolderPlus /> New course
-                  </Button>
-                  <Button onClick={() => openStart('now')}>
-                    <Play /> Start session
-                  </Button>
-                </div>
+                {selectedCourse && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Course options">
+                        <MoreHorizontal className="size-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => setCourseDialog('rename')}>
+                        <Pencil /> Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
+                        <Trash2 /> Delete course
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                <Button variant="outline" size="sm" onClick={() => setCourseDialog('new')}>
+                  <FolderPlus /> New course
+                </Button>
               </div>
-            )}
-          </section>
+
+              {(courses.data.length > 0 || orphanSessions.length > 0) && (
+                <nav aria-label="Courses" className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+                  <ul className="flex gap-2 sm:flex-wrap">
+                    <li>
+                      <button
+                        type="button"
+                        className={chip(selectedId === ALL)}
+                        aria-current={selectedId === ALL ? 'page' : undefined}
+                        onClick={() => select(ALL)}
+                      >
+                        All <span className={count(selectedId === ALL)}>{sessions.data.length}</span>
+                      </button>
+                    </li>
+                    {courses.data.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          className={chip(c.id === selectedId)}
+                          aria-current={c.id === selectedId ? 'page' : undefined}
+                          onClick={() => select(c.id)}
+                        >
+                          <span className="max-w-56 truncate">{c.name}</span>
+                          <span className={count(c.id === selectedId)}>{c.sessionCount}</span>
+                        </button>
+                      </li>
+                    ))}
+                    {orphanSessions.length > 0 && (
+                      <li>
+                        <button
+                          type="button"
+                          className={cn(chip(selectedId === NO_COURSE), 'italic')}
+                          aria-current={selectedId === NO_COURSE ? 'page' : undefined}
+                          onClick={() => select(NO_COURSE)}
+                        >
+                          Other sessions{' '}
+                          <span className={count(selectedId === NO_COURSE)}>{orphanSessions.length}</span>
+                        </button>
+                      </li>
+                    )}
+                  </ul>
+                </nav>
+              )}
+
+              <LectureList
+                key={selectedId}
+                sessions={visibleSessions}
+                courses={courses.data}
+                showCourse={selectedId === ALL}
+                empty={
+                  <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed p-10 text-center">
+                    <p className="font-medium">
+                      {sessions.data.length ? 'No lectures in this course yet' : 'Welcome to Getit'}
+                    </p>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      {sessions.data.length
+                        ? 'Start a session when your lecture begins, or plan one ahead.'
+                        : 'Create a course for your lectures, start a session right away, or plan one ahead.'}
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button variant="outline" onClick={() => openStart('plan')}>
+                        <CalendarPlus /> Plan a lecture
+                      </Button>
+                      <Button onClick={() => openStart('now')}>
+                        <Play /> Start session
+                      </Button>
+                    </div>
+                  </div>
+                }
+              />
+            </section>
+          </div>
+
+          <aside className="lg:sticky lg:top-6" aria-label="Calendar">
+            <CalendarView sessions={sessions.data} onPlan={(day) => openStart('plan', day)} />
+          </aside>
         </div>
       </main>
 
@@ -246,7 +244,7 @@ export function DashboardPage() {
         open={startOpen}
         onOpenChange={setStartOpen}
         courses={courses.data}
-        defaultCourseId={selectedCourse?.id ?? null}
+        defaultCourseId={selectedCourse?.id ?? (selectedId === ALL ? (courses.data[0]?.id ?? null) : null)}
         initialMode={planMode}
         initialDay={planDay}
       />

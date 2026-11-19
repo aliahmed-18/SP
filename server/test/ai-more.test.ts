@@ -1,13 +1,13 @@
 // AI helpers, part 2: Explain drafts + note, Take-away key points, sorting Explain answers. Fake AI.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AiGenerateResult, AiKeyPointsResult, AiSortResult } from '@getit/shared';
+import type { AiKeyPointsResult, AiSortResult } from '@getit/shared';
 import { prisma } from '../src/db';
 import { toAnswerGroups, toKeyPoints } from '../src/lib/ai-output';
 import type { AiRequest } from '../src/lib/gemini';
 import { hashDevice } from '../src/lib/deviceHash';
 import { aiLimiter } from '../src/routes/ai';
 import { setAiClient } from '../src/services/ai';
-import { newDeviceId, newInstructor, newSession, resetDb } from './helpers';
+import { generate, newDeviceId, newInstructor, newSession, resetDb } from './helpers';
 
 beforeEach(async () => {
   await resetDb();
@@ -38,11 +38,14 @@ describe('AI helpers, part 2', () => {
         ],
       };
     });
-    const res = await agent
-      .post(`/api/sessions/${s.code}/ai/generate`)
-      .send({ text: SLIDES, kinds: ['EXPLAIN'], note: 'Focus on the slope' });
+    const res = await generate(agent, s.code, {
+      text: SLIDES,
+      count: 1,
+      kinds: ['EXPLAIN'],
+      note: 'Focus on the slope',
+    });
     expect(res.status).toBe(200);
-    const { drafts } = res.body as AiGenerateResult;
+    const drafts = res.drafts;
     expect(drafts).toEqual([
       {
         type: 'EXPLAIN',

@@ -1,16 +1,16 @@
 import { Router, type Response } from 'express';
-import { aiGenerateSchema, codeParamSchema, idParamSchema, type AiStatus } from '@getit/shared';
+import {
+  aiGenerateSchema,
+  codeParamSchema,
+  idParamSchema,
+  type AiGenerateLine,
+  type AiStatus,
+} from '@getit/shared';
 import { instructorId, requireInstructor } from '../auth/middleware';
 import { HttpError } from '../lib/errors';
 import { FixedWindowLimiter } from '../lib/rateLimit';
 import { parse } from '../lib/validate';
-import {
-  aiEnabled,
-  generateQuickChecks,
-  sortExplainAnswers,
-  suggestKeyPoints,
-  suggestTopics,
-} from '../services/ai';
+import { aiEnabled, streamDrafts, sortExplainAnswers, suggestKeyPoints, suggestTopics } from '../services/ai';
 import { ownedActivity } from '../services/qa-access';
 import { getHostSession } from '../services/sessions';
 
@@ -43,7 +43,22 @@ aiRouter.post('/sessions/:code/ai/generate', requireInstructor, async (req, res)
   const input = parse(aiGenerateSchema, req.body);
   await getHostSession(instructorId(res), code); // owner only
   assertReady(res);
-  res.json(await generateQuickChecks(input));
+  // Errors above are normal JSON errors. From here, drafts stream as NDJSON lines as each part is ready.
+  res.status(200).type('application/x-ndjson').setHeader('cache-control', 'no-store');
+  res.flushHeaders();
+  const line = (l: AiGenerateLine) => res.write(`${JSON.stringify(l)}\n`);
+  try {
+    const count = await streamDrafts(input, (drafts) => line({ drafts }));
+    line({ done: true, count });
+  } catch (err) {
+    const e =
+      err instanceof HttpError
+        ? { code: err.code, message: err.message }
+        : { code: 'AI_FAILED', message: "The AI couldn't help this time. Try again, or carry on by hand." };
+    if (!(err instanceof HttpError)) console.error('[getit] AI generate failed', err);
+    line({ done: true, error: e });
+  }
+  res.end();
 });
 
 aiRouter.post('/sessions/:code/ai/keypoints', requireInstructor, async (req, res) => {

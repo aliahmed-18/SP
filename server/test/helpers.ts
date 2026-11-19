@@ -133,3 +133,30 @@ export function eventWhere<E extends keyof ServerToClientEvents>(
     c.on(event, on);
   });
 }
+
+/** POST …/ai/generate and read its NDJSON stream (or a plain JSON error before streaming starts). */
+export async function generate(agent: ReturnType<typeof request.agent>, code: string, body: object) {
+  const res = await agent
+    .post(`/api/sessions/${code}/ai/generate`)
+    .send(body)
+    .buffer(true)
+    .parse((r, cb) => {
+      let text = '';
+      r.setEncoding('utf8');
+      r.on('data', (c: string) => (text += c));
+      r.on('end', () => cb(null, text));
+    });
+  const lines = String(res.body)
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  const last = lines.at(-1) as { error?: { code: string; message: string } } | undefined;
+  return {
+    status: res.status,
+    contentType: String(res.headers['content-type']),
+    lines,
+    drafts: lines.flatMap((l) => (Array.isArray(l.drafts) ? (l.drafts as { prompt: string }[]) : [])),
+    error: last?.error,
+  };
+}

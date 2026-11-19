@@ -1,15 +1,30 @@
 /**
- * Long material is split into up to 3 parts that the AI drafts from in parallel: each request reads
- * less and writes fewer questions, so the wait is roughly a third — and the drafts cover the whole
- * lecture instead of its first slides. Short material stays one request.
+ * Drafts are written by several small AI requests running in parallel (about 2 questions each, at most
+ * 4 requests). Each request is short, so the first drafts reach the instructor in seconds and the rest
+ * stream in, while every request keeps the model's full thinking (quality first).
+ *
+ * Long material is cut into one part per request (at paragraph breaks), so the drafts cover the whole
+ * lecture. Short material goes whole to every request, each asked to focus on a different idea.
  */
-export const BATCH_MIN_CHARS = 6000;
-const MAX_BATCHES = 3;
+export const BATCH_QUESTIONS = 2;
+export const MAX_BATCHES = 4;
+/** Below this many characters per part, splitting would leave a part with too little to ask about. */
+export const MIN_PART_CHARS = 1500;
 
-export function splitForBatches(text: string, count: number): { text: string; count: number }[] {
-  const n = text.length < BATCH_MIN_CHARS ? 1 : Math.min(MAX_BATCHES, count);
-  if (n <= 1) return [{ text, count }];
-  // Cut at paragraph (or line) breaks near each 1/n mark, never inside a line.
+export type Batch = { text: string; count: number; part: number; parts: number; split: boolean };
+
+export function planBatches(text: string, count: number): Batch[] {
+  const n = Math.max(1, Math.min(MAX_BATCHES, Math.ceil(count / BATCH_QUESTIONS)));
+  const base = Math.floor(count / n);
+  const extra = count % n;
+  const counts = Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
+  const split = n > 1 && text.length >= MIN_PART_CHARS * n;
+  const texts = split ? cutAtBreaks(text, n) : counts.map(() => text);
+  return counts.map((c, i) => ({ text: texts[i] ?? text, count: c, part: i + 1, parts: n, split }));
+}
+
+/** n parts of similar length, cut at paragraph (or line) breaks near each 1/n mark. */
+function cutAtBreaks(text: string, n: number): string[] {
   const target = text.length / n;
   const parts: string[] = [];
   let start = 0;
@@ -22,8 +37,5 @@ export function splitForBatches(text: string, count: number): { text: string; co
     start = cut;
   }
   parts.push(text.slice(start).trim());
-  const chunks = parts.filter(Boolean);
-  const base = Math.floor(count / chunks.length);
-  const extra = count % chunks.length;
-  return chunks.map((t, i) => ({ text: t, count: base + (i < extra ? 1 : 0) }));
+  return parts;
 }

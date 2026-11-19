@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { AiGenerateResult, AiGroupResult, HostState } from '@getit/shared';
-import { ask, joinAs, startSession } from './helpers';
+import type { AiGroupResult, HostState } from '@getit/shared';
+import { ask, joinAs, ndjson, startSession } from './helpers';
 
 // AI helpers, client side. The AI's replies are faked at the network edge (the server side, incl. the
 // checks on what the AI returns, is covered by server/test/ai.test.ts); everything else is real.
@@ -54,27 +54,30 @@ test('AI generation: paste slides → pick drafts → added as drafts, nothing l
   const code = await startSession(page);
   await page.route(`**/api/sessions/${code}/ai/generate`, async (r) => {
     expect(r.request().postDataJSON()).toMatchObject({ text: SLIDES, count: 3 });
-    await r.fulfill({
-      json: {
-        drafts: [
-          {
-            type: 'QUICK_CHECK',
-            kind: 'MCQ',
-            prompt: 'What does the slope b measure?',
-            options: ['Strength of the relationship', 'Change in y per unit of x', 'Causation'],
-            correct: 1,
-            explanation: 'b = Sxy / Sxx is the change in y for each one-unit increase in x.',
-          },
-          {
-            type: 'QUICK_CHECK',
-            kind: 'TRUE_FALSE',
-            prompt: 'Correlation implies causation.',
-            correct: false,
-            explanation: 'A strong r alone never shows cause.',
-          },
-        ],
-      } satisfies AiGenerateResult,
-    });
+    await r.fulfill(
+      ndjson(
+        {
+          drafts: [
+            {
+              type: 'QUICK_CHECK',
+              kind: 'MCQ',
+              prompt: 'What does the slope b measure?',
+              options: ['Strength of the relationship', 'Change in y per unit of x', 'Causation'],
+              correct: 1,
+              explanation: 'b = Sxy / Sxx is the change in y for each one-unit increase in x.',
+            },
+            {
+              type: 'QUICK_CHECK',
+              kind: 'TRUE_FALSE',
+              prompt: 'Correlation implies causation.',
+              correct: false,
+              explanation: 'A strong r alone never shows cause.',
+            },
+          ],
+        },
+        { done: true, count: 2 },
+      ),
+    );
   });
 
   await page.getByRole('button', { name: 'AI generation' }).click();
@@ -98,12 +101,12 @@ test('AI failure is a readable message and the manual flow stays', async ({ page
   await aiOn(page);
   const code = await startSession(page);
   await page.route(`**/api/sessions/${code}/ai/generate`, (r) =>
-    r.fulfill({
-      status: 504,
-      json: {
+    r.fulfill(
+      ndjson({
+        done: true,
         error: { code: 'AI_TIMEOUT', message: 'The AI took too long. Try again, or carry on by hand.' },
-      },
-    }),
+      }),
+    ),
   );
   await page.getByRole('button', { name: 'AI generation' }).click();
   const dialog = page.getByRole('dialog');
@@ -125,4 +128,46 @@ test('without an AI key the AI buttons are hidden', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Set up activities' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'AI generation' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Group with AI' })).toHaveCount(0);
+});
+
+test('AI generation keeps working in the background: close, keep teaching, get told, review', async ({
+  page,
+}) => {
+  await aiOn(page);
+  const code = await startSession(page);
+  await page.route(`**/api/sessions/${code}/ai/generate`, async (r) => {
+    await new Promise((done) => setTimeout(done, 2500)); // the AI is thinking
+    await r.fulfill(
+      ndjson(
+        {
+          drafts: [
+            {
+              type: 'QUICK_CHECK',
+              kind: 'TRUE_FALSE',
+              prompt: 'Correlation implies causation.',
+              correct: false,
+              explanation: 'It does not.',
+            },
+          ],
+        },
+        { done: true, count: 1 },
+      ),
+    );
+  });
+  await page.getByRole('button', { name: 'AI generation' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Or paste slide text or notes').fill(SLIDES);
+  await dialog.getByTestId('ai-generate').click();
+  await expect(dialog).toContainText('You can close this window and keep teaching.');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  // Teaching goes on (the host page is usable) and a toast says when the drafts are ready.
+  await expect(page.getByText('1 AI draft is ready to review')).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Review' }).click();
+  await expect(page.getByRole('dialog').getByTestId('ai-drafts')).toContainText(
+    'Correlation implies causation.',
+  );
+  await page.getByRole('dialog').getByRole('button', { name: 'Add 1 draft' }).click();
+  await expect(page.getByTestId('activity-row')).toHaveCount(1);
 });

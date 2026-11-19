@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, MessageSquareText, Plus, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { AI_LIMITS, type AiDraft, type AiGenerateKind } from '@getit/shared';
@@ -16,7 +15,7 @@ import {
 import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { KIND_ICON, KIND_LABEL } from '../activities/kinds';
-import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
+import { AI_PRIVACY_NOTE, streamGenerate } from './ai-api';
 import { AiDraftCard } from './AiDraftCard';
 import { Elapsed } from './Elapsed';
 import { AiSourceFields } from './AiSourceFields';
@@ -57,11 +56,41 @@ export function AiGenerateDialog({
   const reading = files.some((f) => f.text === null && !f.error);
   const tooShort = text.length < AI_LIMITS.slideTextMin;
   const tooLong = text.length > AI_LIMITS.slideTextMax;
-  const gen = useMutation({
-    mutationFn: () => aiApi.generate(code, { text, count, kinds, note }),
-    onSuccess: (r) => setDrafts(r.drafts.map((draft) => ({ draft, on: true }))),
-  });
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** Bumped per run: restarts the elapsed timer. */
+  const [run, setRun] = useState(0);
   const chosen = drafts?.filter((d) => d.on) ?? [];
+
+  // The work goes on while the dialog is closed (keep teaching); a toast says when the drafts are ready.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  async function generate() {
+    setError(null);
+    setDrafts([]);
+    setRunning(true);
+    setRun((n) => n + 1);
+    try {
+      const total = await streamGenerate(code, { text, count, kinds, note }, (fresh) =>
+        setDrafts((prev) => [...(prev ?? []), ...fresh.map((draft) => ({ draft, on: true }))]),
+      );
+      if (!openRef.current)
+        toast.success(`${total} AI ${total === 1 ? 'draft is' : 'drafts are'} ready to review`, {
+          duration: 15_000,
+          action: { label: 'Review', onClick: () => onOpenChange(true) },
+        });
+    } catch (err) {
+      const message = err instanceof ApiRequestError ? err.message : 'Something went wrong.';
+      setError(message);
+      setDrafts((prev) => (prev?.length ? prev : null));
+      if (!openRef.current) toast.error(message);
+    } finally {
+      setRunning(false);
+    }
+  }
 
   async function add() {
     setAdding(true);
@@ -103,37 +132,55 @@ export function AiGenerateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {gen.isPending ? (
+        {running && !drafts?.length ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center" role="status">
             <Spinner decorative className="!size-8" />
             <p className="font-medium">Preparing drafts…</p>
             <p className="text-sm text-muted-foreground">
-              Checking every answer can take a minute or two. <Elapsed />
+              Drafts appear here one by one as they're ready. <Elapsed key={run} />
             </p>
+            <p className="text-sm text-muted-foreground">You can close this window and keep teaching.</p>
           </div>
         ) : drafts ? (
-          <ul className="flex flex-col gap-3" data-testid="ai-drafts">
-            {drafts.map(({ draft, on }, i) => (
-              <li
-                key={i}
-                className={cn(
-                  'flex gap-3 rounded-xl border p-3',
-                  on ? 'border-primary/40 bg-accent/40' : 'opacity-60',
-                )}
+          <>
+            <ul className="flex flex-col gap-3" data-testid="ai-drafts">
+              {drafts.map(({ draft, on }, i) => (
+                <li
+                  key={i}
+                  className={cn(
+                    'flex gap-3 rounded-xl border p-3',
+                    on ? 'border-primary/40 bg-accent/40' : 'opacity-60',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) =>
+                      setDrafts((prev) => prev!.map((x, j) => (j === i ? { ...x, on: e.target.checked } : x)))
+                    }
+                    className="mt-1 size-5 shrink-0 accent-primary"
+                    aria-label={`Use draft: ${draft.prompt}`}
+                  />
+                  <AiDraftCard draft={draft} />
+                </li>
+              ))}
+            </ul>
+            {running && (
+              <p
+                className="flex items-center gap-2 text-sm text-muted-foreground"
+                role="status"
+                data-testid="ai-more"
               >
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={(e) =>
-                    setDrafts((prev) => prev!.map((x, j) => (j === i ? { ...x, on: e.target.checked } : x)))
-                  }
-                  className="mt-1 size-5 shrink-0 accent-primary"
-                  aria-label={`Use draft: ${draft.prompt}`}
-                />
-                <AiDraftCard draft={draft} />
-              </li>
-            ))}
-          </ul>
+                <Spinner decorative className="!size-4" /> Writing more drafts ({drafts.length} of {count}{' '}
+                ready)… <Elapsed key={run} />
+              </p>
+            )}
+            {error && !running && (
+              <p className="text-sm text-muted-foreground" data-testid="ai-partial">
+                Some drafts couldn't be written: {error}
+              </p>
+            )}
+          </>
         ) : (
           <div className="flex flex-col gap-4">
             <AiSourceFields
@@ -192,14 +239,13 @@ export function AiGenerateDialog({
                 {hint}
               </p>
             )}
-            {gen.isError && (
+            {error && (
               <p
                 className="rounded-lg border border-destructive/40 p-3 text-sm"
                 role="alert"
                 data-testid="ai-error"
               >
-                {gen.error instanceof ApiRequestError ? gen.error.message : 'Something went wrong.'} Your
-                files are kept. You can still write activities by hand.
+                {error} Your files are kept. You can still write activities by hand.
               </p>
             )}
           </div>
@@ -211,17 +257,17 @@ export function AiGenerateDialog({
         <DialogFooter>
           {drafts ? (
             <>
-              <Button variant="outline" onClick={() => setDrafts(null)}>
+              <Button variant="outline" onClick={() => setDrafts(null)} disabled={running}>
                 <ArrowLeft /> Back
               </Button>
-              <Button onClick={() => void add()} disabled={chosen.length === 0 || adding}>
+              <Button onClick={() => void add()} disabled={chosen.length === 0 || adding || running}>
                 <Plus /> {chosen.length === 1 ? 'Add 1 draft' : `Add ${chosen.length} drafts`}
               </Button>
             </>
           ) : (
             <Button
-              onClick={() => gen.mutate()}
-              disabled={tooShort || tooLong || reading || kinds.length === 0 || gen.isPending}
+              onClick={() => void generate()}
+              disabled={tooShort || tooLong || reading || kinds.length === 0 || running}
               data-testid="ai-generate"
             >
               <Sparkles /> Generate drafts

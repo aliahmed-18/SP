@@ -1,13 +1,12 @@
-// Faster generation: long material → up to 3 parallel requests, merged; one failed part keeps the rest.
+// Smooth AI: small parallel requests, drafts streamed as each finishes, one failure keeps the rest.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AiGenerateResult } from '@getit/shared';
 import { prisma } from '../src/db';
-import { BATCH_MIN_CHARS, splitForBatches } from '../src/lib/ai-batches';
+import { MAX_BATCHES, MIN_PART_CHARS, planBatches } from '../src/lib/ai-batches';
 import { HttpError } from '../src/lib/errors';
 import type { AiRequest } from '../src/lib/gemini';
 import { aiLimiter } from '../src/routes/ai';
 import { setAiClient } from '../src/services/ai';
-import { newInstructor, newSession, resetDb } from './helpers';
+import { generate, newInstructor, newSession, resetDb, startLiveServer } from './helpers';
 
 beforeEach(async () => {
   await resetDb();
@@ -21,27 +20,33 @@ const LONG = Array.from(
   { length: 30 },
   (_, i) => `Idea ${i + 1}. ${'The least-squares line minimises squared residuals. '.repeat(6)}`,
 ).join('\n\n');
-
+const SHORT = 'The slope b = Sxy / Sxx is the change in y per unit of x. '.repeat(6);
 const tf = (prompt: string) => ({ kind: 'TRUE_FALSE', prompt, correctTrue: true, explanation: 'Yes.' });
+const words = (t: string) => t.split(/\s+/).filter(Boolean);
 
-describe('splitForBatches (pure)', () => {
-  it('short material: one request with every question', () => {
-    expect(splitForBatches('short text', 5)).toEqual([{ text: 'short text', count: 5 }]);
+describe('planBatches (pure)', () => {
+  it('about 2 questions per request, at most 4 requests, counts add up', () => {
+    expect(planBatches(SHORT, 1).map((b) => b.count)).toEqual([1]);
+    expect(planBatches(SHORT, 5).map((b) => b.count)).toEqual([2, 2, 1]);
+    expect(planBatches(SHORT, 8).map((b) => b.count)).toEqual([2, 2, 2, 2]);
+    expect(planBatches(LONG, 8)).toHaveLength(MAX_BATCHES);
   });
 
-  it('long material: up to 3 parts cut at paragraph breaks, counts shared out, nothing lost', () => {
-    expect(LONG.length).toBeGreaterThan(BATCH_MIN_CHARS);
-    const parts = splitForBatches(LONG, 8);
-    expect(parts.map((p) => p.count)).toEqual([3, 3, 2]);
-    expect(parts.every((p) => p.text.startsWith('Idea '))).toBe(true); // never cut mid-paragraph
-    const words = (t: string) => t.split(/\s+/).filter(Boolean);
-    expect(words(parts.map((p) => p.text).join(' '))).toEqual(words(LONG)); // nothing lost or doubled
-    expect(splitForBatches(LONG, 2)).toHaveLength(2); // never more parts than questions
+  it('long material: one part per request, cut at paragraph breaks, nothing lost', () => {
+    const parts = planBatches(LONG, 6);
+    expect(LONG.length).toBeGreaterThan(MIN_PART_CHARS * parts.length);
+    expect(parts.every((p) => p.split && p.text.startsWith('Idea '))).toBe(true);
+    expect(words(parts.map((p) => p.text).join(' '))).toEqual(words(LONG));
+  });
+
+  it('short material: every request reads all of it (and is asked for different ideas)', () => {
+    const parts = planBatches(SHORT, 6);
+    expect(parts.every((p) => !p.split && p.text === SHORT)).toBe(true);
   });
 });
 
-describe('parallel generation', () => {
-  it('3 requests at once, merged without duplicates; one failed part keeps the others', async () => {
+describe('streamed, parallel generation', () => {
+  it('requests run at once; each part streams as it finishes; a failed part keeps the rest', async () => {
     const { agent } = await newInstructor();
     const s = await newSession(agent);
     const seen: AiRequest[] = [];
@@ -51,26 +56,44 @@ describe('parallel generation', () => {
       seen.push(req);
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
-      await new Promise((r) => setTimeout(r, 50));
+      const part = Number(/part (\d) of 3/.exec(req.prompt)?.[1]);
+      await new Promise((r) => setTimeout(r, 40 * part)); // part 1 first, then 2
       inFlight--;
-      const part = /part (\d) of 3/.exec(req.prompt)?.[1];
-      if (part === '3') throw new HttpError(504, 'AI_TIMEOUT', 'slow');
+      if (part === 3) throw new HttpError(504, 'AI_TIMEOUT', 'slow');
       return { questions: [tf(`Question from part ${part}?`), tf('Same everywhere?')] };
     });
-    const res = await agent
-      .post(`/api/sessions/${s.code}/ai/generate`)
-      .send({ text: LONG, count: 6, kinds: ['TRUE_FALSE'] });
+    const res = await generate(agent, s.code, { text: LONG, count: 6, kinds: ['TRUE_FALSE'] });
     expect(res.status).toBe(200);
     expect(seen).toHaveLength(3);
     expect(maxInFlight).toBe(3); // really in parallel
-    expect((res.body as AiGenerateResult).drafts.map((d) => d.prompt)).toEqual([
-      'Question from part 1?',
-      'Same everywhere?',
-      'Question from part 2?',
+    // One line per finished part, in the order they finished, then the summary line.
+    expect(res.lines).toEqual([
+      {
+        drafts: [
+          expect.objectContaining({ prompt: 'Question from part 1?' }),
+          expect.objectContaining({ prompt: 'Same everywhere?' }),
+        ],
+      },
+      { drafts: [expect.objectContaining({ prompt: 'Question from part 2?' })] }, // duplicate dropped
+      { done: true, count: 3 },
     ]);
   });
 
-  it('every part failing keeps the real reason (e.g. the free limit)', async () => {
+  it('short material: every writer is told to cover different ideas', async () => {
+    const { agent } = await newInstructor();
+    const s = await newSession(agent);
+    const prompts: string[] = [];
+    setAiClient(async (req) => {
+      prompts.push(req.prompt);
+      return { questions: [tf(`Q${prompts.length}?`)] };
+    });
+    const res = await generate(agent, s.code, { text: SHORT, count: 4, kinds: ['TRUE_FALSE'] });
+    expect(res.drafts).toHaveLength(2);
+    expect(prompts.some((p) => p.includes('writer 1 of 2') && p.includes('first quarter'))).toBe(true);
+    expect(prompts.some((p) => p.includes('writer 2 of 2') && p.includes('second quarter'))).toBe(true);
+  });
+
+  it('every part failing ends the stream with the real reason (e.g. the free limit)', async () => {
     const { agent } = await newInstructor();
     const s = await newSession(agent);
     setAiClient(async () => {
@@ -80,8 +103,55 @@ describe('parallel generation', () => {
         'The AI is busy right now (free limit reached). Try again in a minute.',
       );
     });
-    const res = await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: LONG, count: 5 });
-    expect(res.status).toBe(429);
-    expect(res.body.error.code).toBe('AI_BUSY');
+    const res = await generate(agent, s.code, { text: LONG, count: 5 });
+    expect(res.drafts).toEqual([]);
+    expect(res.error).toMatchObject({ code: 'AI_BUSY' });
+  });
+});
+
+describe('streaming over a real connection', () => {
+  it('the first drafts arrive while the slowest part is still being written', async () => {
+    const server = await startLiveServer();
+    try {
+      const email = `stream${Date.now()}@example.com`;
+      const reg = await fetch(`${server.url}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Dr. Stream', email, password: 'password123' }),
+      });
+      const cookie = reg.headers.get('set-cookie')!.split(';')[0]!;
+      const created = await fetch(`${server.url}/api/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie },
+        body: JSON.stringify({ topic: 'Streaming' }),
+      });
+      const { code } = (await created.json()) as { code: string };
+      setAiClient(async (req) => {
+        const part = Number(/part (\d) of 3/.exec(req.prompt)?.[1]);
+        await new Promise((r) => setTimeout(r, part === 3 ? 1500 : 100)); // part 3 is slow
+        return { questions: [tf(`From part ${part}?`)] };
+      });
+
+      const started = Date.now();
+      const res = await fetch(`${server.url}/api/sessions/${code}/ai/generate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie },
+        body: JSON.stringify({ text: LONG, count: 6, kinds: ['TRUE_FALSE'] }),
+      });
+      const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+      const arrivals: { at: number; text: string }[] = [];
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (value) arrivals.push({ at: Date.now() - started, text: value });
+        if (done) break;
+      }
+      const firstDraft = arrivals.find((a) => a.text.includes('"drafts"'))!;
+      const end = arrivals.at(-1)!;
+      expect(firstDraft.at).toBeLessThan(1000); // long before part 3 (1.5 s) is done
+      expect(end.at).toBeGreaterThanOrEqual(1400);
+      expect(arrivals.map((a) => a.text).join('')).toContain('"done":true,"count":3');
+    } finally {
+      await server.close();
+    }
   });
 });

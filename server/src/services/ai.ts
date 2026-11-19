@@ -1,6 +1,7 @@
 import type { Activity } from '@prisma/client';
 import {
   AI_LIMITS,
+  type AiDraft,
   type AiGenerateKind,
   type AiGenerateResult,
   type AiGroupResult,
@@ -9,7 +10,7 @@ import {
 } from '@getit/shared';
 import { prisma } from '../db';
 import { env } from '../env';
-import { splitForBatches } from '../lib/ai-batches';
+import { planBatches } from '../lib/ai-batches';
 import { toAnswerGroups, toDrafts, toKeyPoints, toSuggestions } from '../lib/ai-output';
 import { HttpError } from '../lib/errors';
 import { aiFailed, geminiClient, type AiClient } from '../lib/gemini';
@@ -129,22 +130,35 @@ const KIND_RULES: Record<AiGenerateKind, string> = {
 };
 
 /** Drafts from slide text / lecture notes. Returns drafts; the instructor picks and adds them. */
-export async function generateQuickChecks(input: {
-  text: string;
-  count: number;
-  kinds: AiGenerateKind[];
-  note: string;
-}): Promise<AiGenerateResult> {
-  const batches = splitForBatches(input.text, input.count);
+type GenerateInput = { text: string; count: number; kinds: AiGenerateKind[]; note: string };
+
+/**
+ * Drafts from slide text / notes, written by small parallel requests (see planBatches). `onDrafts` is
+ * called as each request finishes, so the instructor sees the first drafts in seconds and reviews them
+ * while the rest arrive. One failed request never loses the others. Returns how many drafts were sent.
+ */
+export async function streamDrafts(
+  input: GenerateInput,
+  onDrafts: (drafts: AiDraft[]) => void,
+): Promise<number> {
+  const batches = planBatches(input.text, input.count);
+  const seen = new Set<string>();
+  let sent = 0;
   const results = await Promise.allSettled(
-    batches.map((b, i) =>
+    batches.map((b) =>
       client({
         system:
           'You write short checks a university lecturer runs live in class to see whether students understood. ' +
           SAFETY,
         prompt: [
-          `Write ${b.count} ${b.count === 1 ? 'question' : 'questions'} on the most important ideas in the lecture material below` +
-            (batches.length > 1 ? ` (part ${i + 1} of ${batches.length} of the lecture).` : '.'),
+          `Write ${b.count} ${b.count === 1 ? 'question' : 'questions'} on the most important ideas in the lecture material below.`,
+          ...(b.parts > 1
+            ? [
+                b.split
+                  ? `The material is part ${b.part} of ${b.parts} of the lecture; ask only about this part.`
+                  : `You are writer ${b.part} of ${b.parts} working on the same material at once: ask about ideas from the ${ordinal(b.part)} quarter of the material, so the writers cover different ideas.`,
+              ]
+            : []),
           `Use only these types: ${input.kinds.join(', ')}. Mix them if more than one is allowed.`,
           ...input.kinds.map((k) => `- ${KIND_RULES[k]}`),
           '- Each question tests understanding (not memorising a slide), fits on a phone screen and takes under a minute.',
@@ -160,24 +174,34 @@ export async function generateQuickChecks(input: {
           '</material>',
         ].join('\n'),
         schema: checksSchema,
-      }).then((raw) => toDrafts(raw, input.kinds, b.count)),
+      }).then((raw) => {
+        // No duplicate prompts across requests, never more than asked for.
+        const fresh = toDrafts(raw, input.kinds, b.count)
+          .filter((d) => {
+            const key = d.prompt.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .slice(0, input.count - sent);
+        sent += fresh.length;
+        if (fresh.length) onDrafts(fresh);
+      }),
     ),
   );
-  // Keep whatever succeeded (one slow or failed part shouldn't lose the rest); no duplicate prompts.
-  const seen = new Set<string>();
-  const drafts = results
-    .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
-    .filter((d) => {
-      const key = d.prompt.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, input.count);
-  if (drafts.length === 0) {
+  if (sent === 0) {
     const failure = results.find((r) => r.status === 'rejected');
     throw failure ? failure.reason : aiFailed();
   }
+  return sent;
+}
+
+const ordinal = (n: number) => ['first', 'second', 'third', 'fourth'][n - 1] ?? `${n}th`;
+
+/** All drafts at once (tests, scripts). */
+export async function generateQuickChecks(input: GenerateInput): Promise<AiGenerateResult> {
+  const drafts: AiDraft[] = [];
+  await streamDrafts(input, (d) => drafts.push(...d));
   return { drafts };
 }
 

@@ -299,5 +299,12 @@ export type AiGenerateInput = z.input<typeof aiGenerateSchema>;
 export type AiGenerateKind = z.infer<typeof aiGenerateSchema>['kinds'][number];
 /** A generated draft, already valid for POST /sessions/:code/activities. */
 export type AiDraft = QuickCheckDraft | z.infer<typeof explainDraftSchema>;
-/** POST /sessions/:code/ai/generate → drafts to review. */
 export type AiGenerateResult = { drafts: AiDraft[] };
+/**
+ * POST /sessions/:code/ai/generate streams NDJSON (one JSON object per line) as drafts get ready:
+ * `{ drafts }` lines, then one final `{ done: true, count }` or `{ done: true, error }` line.
+ */
+export type AiGenerateLine =
+  | { drafts: AiDraft[] }
+  | { done: true; count: number }
+  | { done: true; error: { code: string; message: string } };

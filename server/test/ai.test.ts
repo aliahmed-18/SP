@@ -1,6 +1,6 @@
 // AI helpers (stretch): proposals only, owner only, validated output, graceful failure. Uses a fake AI.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AiGroupResult, AiGenerateResult } from '@getit/shared';
+import type { AiGroupResult } from '@getit/shared';
 import { prisma } from '../src/db';
 import { toDrafts, toSuggestions } from '../src/lib/ai-output';
 import { aiTimeout, type AiRequest } from '../src/lib/gemini';
@@ -8,7 +8,7 @@ import { hashDevice } from '../src/lib/deviceHash';
 import { aiLimiter } from '../src/routes/ai';
 import { setAiClient } from '../src/services/ai';
 import { askQuestion } from '../src/services/questions';
-import { newDeviceId, newInstructor, newSession, resetDb } from './helpers';
+import { generate, newDeviceId, newInstructor, newSession, resetDb } from './helpers';
 
 beforeEach(async () => {
   await resetDb();
@@ -117,11 +117,12 @@ describe('AI helpers', () => {
     const short = await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: 'too short' });
     expect(short.status).toBe(400);
 
-    const res = await agent
-      .post(`/api/sessions/${s.code}/ai/generate`)
-      .send({ text: SLIDES, count: 5, kinds: ['MCQ', 'TRUE_FALSE'] });
+    const res = await generate(agent, s.code, { text: SLIDES, count: 5, kinds: ['MCQ', 'TRUE_FALSE'] });
     expect(res.status).toBe(200);
-    const { drafts } = res.body as AiGenerateResult;
+    expect(res.contentType).toMatch(/application\/x-ndjson/);
+    expect(res.lines.at(-1)).toEqual({ done: true, count: 2 });
+    const drafts = res.drafts;
+    // Several small requests ran on the same short text; duplicates across them are dropped.
     expect(drafts.map((d) => d.prompt)).toEqual([
       'What does the slope b measure?',
       'Correlation implies causation.',
@@ -138,14 +139,14 @@ describe('AI helpers', () => {
     setAiClient(async () => {
       throw aiTimeout();
     });
-    const slow = await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: SLIDES });
-    expect(slow.status).toBe(504);
-    expect(slow.body.error.message).toMatch(/carry on by hand/);
+    const slow = await generate(agent, s.code, { text: SLIDES });
+    expect(slow.error).toMatchObject({ code: 'AI_TIMEOUT' });
+    expect(slow.error!.message).toMatch(/carry on by hand/);
 
     setAiClient(async () => ({ questions: 'nonsense' }));
-    const junk = await agent.post(`/api/sessions/${s.code}/ai/generate`).send({ text: SLIDES });
-    expect(junk.status).toBe(502);
-    expect(junk.body.error.code).toBe('AI_FAILED');
+    const junk = await generate(agent, s.code, { text: SLIDES });
+    expect(junk.error).toMatchObject({ code: 'AI_FAILED' });
+    expect(junk.drafts).toEqual([]);
   });
 
   it('rate limit: 20 AI requests per instructor per 10 minutes', async () => {

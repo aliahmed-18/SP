@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import type { AiGenerateResult, AiKeyPointsResult, AiSortResult, HostState } from '@getit/shared';
-import { joinAs, startSession } from './helpers';
+import type { AiKeyPointsResult, AiSortResult, HostState } from '@getit/shared';
+import { joinAs, ndjson, startSession } from './helpers';
 
 // AI helpers, part 2 (client side): files read in the browser, Explain drafts, Take-away key points,
 // sorting Explain answers. The AI's replies are faked at the network edge; everything else is real.
@@ -21,24 +21,27 @@ test('upload slides: PDF, PowerPoint (with notes), Word and HTML are read in the
   let sent: { text: string; kinds: string[]; note: string } | undefined;
   await page.route(`**/api/sessions/${code}/ai/generate`, async (r) => {
     sent = r.request().postDataJSON();
-    await r.fulfill({
-      json: {
-        drafts: [
-          {
-            type: 'EXPLAIN',
-            prompt: 'In one sentence: what does R squared tell you?',
-            modelAnswer: 'The share of the variation in y the line explains.',
-          },
-          {
-            type: 'QUICK_CHECK',
-            kind: 'TRUE_FALSE',
-            prompt: 'Correlation implies causation.',
-            correct: false,
-            explanation: 'It does not.',
-          },
-        ],
-      } satisfies AiGenerateResult,
-    });
+    await r.fulfill(
+      ndjson(
+        {
+          drafts: [
+            {
+              type: 'EXPLAIN',
+              prompt: 'In one sentence: what does R squared tell you?',
+              modelAnswer: 'The share of the variation in y the line explains.',
+            },
+            {
+              type: 'QUICK_CHECK',
+              kind: 'TRUE_FALSE',
+              prompt: 'Correlation implies causation.',
+              correct: false,
+              explanation: 'It does not.',
+            },
+          ],
+        },
+        { done: true, count: 2 },
+      ),
+    );
   });
 
   await page.getByRole('button', { name: 'AI generation' }).click();

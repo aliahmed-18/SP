@@ -55,7 +55,7 @@ Lifecycle: `DRAFT → LIVE → CLOSED → REVEALED`. Only **one activity LIVE** 
 
 ### C3. Explain (instructor side)
 - Create: **Prompt** (≤ 2000) + **Model answer** (≤ 2000, never sent to students).
-- Students write ≤ **200 characters**. Moderated like questions.
+- Students write ≤ **1000 characters** (a few sentences). Moderated like questions (same words and characters; the length rule is the answer's own).
 - After **Close**, instructor sees all answers (no identities) and tags each: **Correct / Partial / Misconception** (manual). Filter by tag.
 - **Show on projector**: one selected misconception (anonymous) to discuss it with the class.
 
@@ -81,7 +81,7 @@ Opened in a new window; full screen; large type (titles ≥ 32 px, key numbers �
   - Then **How sure are you?** Sure / Not sure / Skip `[shot 22]`.
   - On REVEALED: "You got it" or "Not quite — here's why", own answer + correct answer + explanation, **Back to the lecture** `[shot 23, 24]`.
   - Each revealed result is saved locally (for the Take-away review).
-- Explain: text box ≤ 200 + Send → quiet confirmation "Answer sent".
+- Explain: text box ≤ 1000 + Send → quiet confirmation "Answer sent".
 - Session ENDED: "The lecture has ended" → Take-away when published (or "The instructor is preparing your Take-away").
 
 ## F. Take-away (end of lecture) `[shot 09, 28]`
@@ -99,7 +99,7 @@ Opened in a new window; full screen; large type (titles ≥ 32 px, key numbers �
 | Join code | 5 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (no 0/O/1/I) — unique among LIVE sessions |
 | Topic (lecture) | 1–80 chars |
 | Question | 1–300 chars, ≥ 5 s apart, ≤ 40 per device per session |
-| Explain answer | 1–200 chars, one per device per activity |
+| Explain answer | 1–1000 chars, one per device per activity |
 | Quick Check | prompt ≤ 2000, MCQ 2–5 options ≤ 300 each, explanation required |
 | Topic title | 1–100 |
 | Reply | ≤ 2000 |

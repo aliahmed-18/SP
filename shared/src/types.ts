@@ -264,3 +264,13 @@ export type AiKeyPointsResult = { keyPoints: string[] };
 /** POST /activities/:id/ai/sort → Explain answers in groups with a suggested tag (applied by the instructor). */
 export type AiAnswerGroup = { label: string; tag: ExplainTag; answerIds: string[] };
 export type AiSortResult = { groups: AiAnswerGroup[] };
+/**
+ * POST /activities/:id/ai/grade: the AI's tags applied to the answers that had none (the instructor's
+ * own tags are never changed). `changedIds` lets the page offer Undo; `groups` says what the AI found.
+ */
+export type AiGradeResult = {
+  graded: number;
+  counts: Record<ExplainTag, number>;
+  groups: { label: string; tag: ExplainTag; count: number }[];
+  changedIds: string[];
+};

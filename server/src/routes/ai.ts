@@ -4,7 +4,8 @@ import { instructorId, requireInstructor } from '../auth/middleware';
 import { HttpError } from '../lib/errors';
 import { FixedWindowLimiter } from '../lib/rateLimit';
 import { parse } from '../lib/validate';
-import { aiEnabled, sortExplainAnswers, suggestKeyPoints, suggestTopics } from '../services/ai';
+import { aiEnabled, gradeExplainAnswers, suggestKeyPoints, suggestTopics } from '../services/ai';
+import { emitHostSnapshot, safeEmit } from '../realtime/broadcast';
 import { isAiJobRunning } from '../services/ai-job-store';
 import { ownedActivity } from '../services/qa-access';
 import { startAiJob } from '../realtime/ai-jobs';
@@ -56,9 +57,12 @@ aiRouter.post('/sessions/:code/ai/keypoints', requireInstructor, async (req, res
   res.json(await suggestKeyPoints(s.id, s.topic));
 });
 
-aiRouter.post('/activities/:id/ai/sort', requireInstructor, async (req, res) => {
+/** "Grade with AI": tags the untagged answers of a closed Explain at once (Undo on the page). */
+aiRouter.post('/activities/:id/ai/grade', requireInstructor, async (req, res) => {
   const { id } = parse(idParamSchema, req.params);
   const a = await ownedActivity(instructorId(res), id);
   assertReady(res);
-  res.json(await sortExplainAnswers(a));
+  const result = await gradeExplainAnswers(a);
+  safeEmit(emitHostSnapshot(a.sessionId)); // the tags changed (rule 8)
+  res.json(result);
 });

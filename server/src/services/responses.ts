@@ -1,4 +1,11 @@
-import { EXPLAIN_MAX, moderateQuestion, type Answer, type ExplainTag, type MyResponse } from '@getit/shared';
+import {
+  cleanText,
+  EXPLAIN_MAX,
+  moderateAnswer,
+  type Answer,
+  type ExplainTag,
+  type MyResponse,
+} from '@getit/shared';
 import type { Activity, Response } from '@prisma/client';
 import { prisma } from '../db';
 import { HttpError } from '../lib/errors';
@@ -111,12 +118,12 @@ export async function submitExplain(
   if (a.status !== 'LIVE')
     throw new HttpError(409, 'ANSWERING_CLOSED', 'Answering is closed for this question.');
 
-  const mod = moderateQuestion(input.text);
+  const mod = moderateAnswer(input.text, EXPLAIN_MAX);
   if (!mod.ok && mod.reason === 'empty') throw new HttpError(400, 'VALIDATION', 'Write your answer first.');
-  const cleaned = mod.ok ? mod.text : input.text.normalize('NFC').replace(/\s+/gu, ' ').trim();
-  if ([...cleaned].length > EXPLAIN_MAX) {
+  // Too long is a plain validation error (the phone counts too) — never a stealth block.
+  if (!mod.ok && mod.reason === 'too_long')
     throw new HttpError(400, 'VALIDATION', `Answers can be up to ${EXPLAIN_MAX} characters.`);
-  }
+  const cleaned = mod.ok ? mod.text : cleanText(input.text);
   const blocked = a.session.academicMode && !mod.ok;
 
   return prisma.$transaction(async (tx) => {

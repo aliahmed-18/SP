@@ -4,7 +4,7 @@ import type {
   AiJob,
   AiGroupResult,
   AiKeyPointsResult,
-  AiSortResult,
+  AiGradeResult,
   AiStatus,
 } from '@getit/shared';
 import { api } from '@/lib/api';
@@ -28,8 +28,8 @@ export const aiApi = {
   confirmAll: (code: string) =>
     api<{ confirmed: number }>(`/sessions/${code}/activities/confirm-ai`, { method: 'POST' }),
   keyPoints: (code: string) => api<AiKeyPointsResult>(`/sessions/${code}/ai/keypoints`, { method: 'POST' }),
-  sortAnswers: (activityId: string) =>
-    api<AiSortResult>(`/activities/${activityId}/ai/sort`, { method: 'POST' }),
+  gradeAnswers: (activityId: string) =>
+    api<AiGradeResult>(`/activities/${activityId}/ai/grade`, { method: 'POST' }),
   group: (code: string) => api<AiGroupResult>(`/sessions/${code}/ai/group`, { method: 'POST' }),
 };
 

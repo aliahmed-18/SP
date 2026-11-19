@@ -73,8 +73,9 @@ export function ExplainView({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Your answer…"
-            rows={4}
-            className="min-h-28 text-base"
+            rows={6}
+            dir="auto"
+            className="max-h-[50dvh] min-h-36 text-base"
             aria-invalid={length > EXPLAIN_MAX ? true : undefined}
             aria-describedby="ex-count"
           />

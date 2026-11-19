@@ -5,7 +5,9 @@ import {
   type AiGenerateKind,
   type AiGroupResult,
   type AiKeyPointsResult,
+  type AiGradeResult,
   type AiSortResult,
+  type ExplainTag,
 } from '@getit/shared';
 import { prisma } from '../db';
 import { env, isProd } from '../env';
@@ -15,6 +17,7 @@ import { HttpError } from '../lib/errors';
 import { fakeAiClient } from '../lib/ai-fake';
 import { aiFailed, geminiClient, type AiClient } from '../lib/gemini';
 import { statsFor } from './activities';
+import { bumpVersion } from './version';
 
 // AI helpers (stretch phase, docs/06). They only PROPOSE: nothing is written here. The instructor
 // reviews the proposal and applies it through the normal endpoints (which validate + emit as usual).
@@ -268,18 +271,20 @@ export async function sortExplainAnswers(a: Activity): Promise<AiSortResult> {
     select: { id: true, text: true },
   });
   if (answers.length < AI_LIMITS.explainAnswersMin)
-    throw new HttpError(
-      400,
-      'NOT_ENOUGH_ANSWERS',
-      `Sorting needs at least ${AI_LIMITS.explainAnswersMin} answers.`,
-    );
+    throw new HttpError(400, 'NOT_ENOUGH_ANSWERS', 'There are no answers to grade yet.');
   const raw = await client({
-    system: 'You help a university lecturer read anonymous one-sentence answers from students. ' + SAFETY,
+    system:
+      'You help a university lecturer grade anonymous written answers from students, fairly and carefully. ' +
+      SAFETY,
     prompt: [
       `Prompt students answered: ${a.prompt}`,
       ...(a.modelAnswer ? [`Lecturer's model answer: ${a.modelAnswer}`] : []),
-      'Group answers that say the same thing. For each group give a short label (what those answers claim, under 12 words)',
-      'and a tag: CORRECT (matches the model answer / is right), PARTIAL (right but incomplete or vague) or MISCONCEPTION (a wrong idea).',
+      'Grade every answer against the prompt' +
+        (a.modelAnswer ? ' and the model answer.' : ', using your knowledge of the subject.'),
+      '- CORRECT: right, even in other words, another language (e.g. Arabic) or with small slips.',
+      '- PARTIAL: on the right track but incomplete, vague or partly wrong.',
+      '- MISCONCEPTION: built on a wrong idea, or off-topic.',
+      'Group answers that say the same thing, with a short label of what they claim (under 12 words, in the language of most of the answers).',
       'Put each answer in exactly one group. Return answer numbers (A1 = 1).',
       '',
       '<answers>',
@@ -308,4 +313,34 @@ export async function sortExplainAnswers(a: Activity): Promise<AiSortResult> {
   const groups = toAnswerGroups(raw, answers);
   if (groups.length === 0) throw aiFailed();
   return { groups };
+}
+
+/**
+ * "Grade with AI" (one click): the AI tags every answer that has no tag yet — the instructor's own tags
+ * are never overwritten — and the groups say which misconceptions stand out. Undo: clear `changedIds`.
+ */
+export async function gradeExplainAnswers(a: Activity): Promise<AiGradeResult> {
+  const { groups } = await sortExplainAnswers(a);
+  return prisma.$transaction(async (tx) => {
+    const counts: Record<ExplainTag, number> = { CORRECT: 0, PARTIAL: 0, MISCONCEPTION: 0 };
+    const changedIds: string[] = [];
+    for (const g of groups) {
+      const untagged = await tx.response.findMany({
+        where: { id: { in: g.answerIds }, activityId: a.id, tag: null },
+        select: { id: true },
+      });
+      if (untagged.length === 0) continue;
+      const ids = untagged.map((x) => x.id);
+      await tx.response.updateMany({ where: { id: { in: ids } }, data: { tag: g.tag } });
+      changedIds.push(...ids);
+      counts[g.tag] += ids.length;
+    }
+    if (changedIds.length) await bumpVersion(tx, a.sessionId);
+    return {
+      graded: changedIds.length,
+      counts,
+      groups: groups.map((g) => ({ label: g.label, tag: g.tag, count: g.answerIds.length })),
+      changedIds,
+    };
+  });
 }

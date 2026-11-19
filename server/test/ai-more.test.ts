@@ -1,6 +1,6 @@
 // AI helpers, part 2: Explain drafts + note, Take-away key points, sorting Explain answers. Fake AI.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AiKeyPointsResult, AiSortResult } from '@getit/shared';
+import type { AiGradeResult, AiKeyPointsResult } from '@getit/shared';
 import { prisma } from '../src/db';
 import { toAnswerGroups, toKeyPoints } from '../src/lib/ai-output';
 import type { AiRequest } from '../src/lib/gemini';
@@ -83,14 +83,14 @@ describe('AI helpers, part 2', () => {
     expect(await prisma.takeaway.count()).toBe(0);
   });
 
-  it('sort Explain answers: closed only, answers numbered, tags suggested, nothing tagged', async () => {
+  it("grade with AI: closed only; tags untagged answers in one click; keeps the instructor's tags", async () => {
     const { agent } = await newInstructor();
     const s = await newSession(agent);
     const a = (
       await agent.post(`/api/sessions/${s.code}/activities`).send({ type: 'EXPLAIN', prompt: 'What is b?' })
     ).body as { id: string };
     setAiClient(async () => ({ groups: [] }));
-    expect((await agent.post(`/api/activities/${a.id}/ai/sort`)).status).toBe(409); // still a draft
+    expect((await agent.post(`/api/activities/${a.id}/ai/grade`)).status).toBe(409); // still a draft
 
     await prisma.activity.update({ where: { id: a.id }, data: { status: 'CLOSED' } });
     const texts = ['Change in y per x', 'Rise over run', 'How strong it is', 'The strength'];
@@ -102,6 +102,8 @@ describe('AI helpers, part 2', () => {
       where: { activityId: a.id },
       orderBy: { createdAt: 'asc' },
     });
+    // The instructor already tagged answer 2 by hand: the AI must not change it.
+    await prisma.response.update({ where: { id: rows[1]!.id }, data: { tag: 'PARTIAL' } });
     let seen: AiRequest | undefined;
     setAiClient(async (req) => {
       seen = req;
@@ -113,18 +115,28 @@ describe('AI helpers, part 2', () => {
         ],
       };
     });
-    const res = await agent.post(`/api/activities/${a.id}/ai/sort`);
+    const res = await agent.post(`/api/activities/${a.id}/ai/grade`);
     expect(res.status).toBe(200);
-    expect((res.body as AiSortResult).groups).toEqual([
-      { label: 'Change in y per unit x', tag: 'CORRECT', answerIds: [rows[0]!.id, rows[1]!.id] },
-      { label: 'Confuses slope with strength', tag: 'MISCONCEPTION', answerIds: [rows[2]!.id, rows[3]!.id] },
-    ]);
+    const body = res.body as AiGradeResult;
+    expect(body).toMatchObject({
+      graded: 3,
+      counts: { CORRECT: 1, PARTIAL: 0, MISCONCEPTION: 2 },
+      groups: [
+        { label: 'Change in y per unit x', tag: 'CORRECT', count: 2 },
+        { label: 'Confuses slope with strength', tag: 'MISCONCEPTION', count: 2 },
+      ],
+    });
+    expect(body.changedIds.sort()).toEqual([rows[0]!.id, rows[2]!.id, rows[3]!.id].sort());
+    const after = await prisma.response.findMany({
+      where: { activityId: a.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(after.map((r) => r.tag)).toEqual(['CORRECT', 'PARTIAL', 'MISCONCEPTION', 'MISCONCEPTION']);
     expect(seen!.prompt).toContain('A1: Change in y per x');
     for (const r of rows) expect(seen!.prompt).not.toContain(r.deviceHash);
-    expect(await prisma.response.count({ where: { activityId: a.id, tag: { not: null } } })).toBe(0);
 
     const other = await newInstructor('Dr. Other');
-    expect((await other.agent.post(`/api/activities/${a.id}/ai/sort`)).status).toBe(404);
+    expect((await other.agent.post(`/api/activities/${a.id}/ai/grade`)).status).toBe(404);
   });
 });
 

@@ -8,6 +8,26 @@ import type { AiClient } from './gemini';
 export const fakeAiClient: AiClient = async ({ prompt }) => {
   await new Promise((r) => setTimeout(r, Number(process.env.AI_FAKE_DELAY_MS ?? 1500)));
   const material = /<material>\n([\s\S]*?)\n<\/material>/.exec(prompt)?.[1];
+  const answers = /<answers>\n([\s\S]*?)\n<\/answers>/.exec(prompt)?.[1]?.split('\n') ?? [];
+  if (answers.length) {
+    // Grading: the first half correct, the rest a misconception.
+    const half = Math.ceil(answers.length / 2);
+    const n = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => from + i + 1);
+    return {
+      groups: [
+        { label: 'Fake: right idea', tag: 'CORRECT', answers: n(0, half) },
+        ...(answers.length > half
+          ? [
+              {
+                label: 'Fake: confuses slope with strength',
+                tag: 'MISCONCEPTION',
+                answers: n(half, answers.length),
+              },
+            ]
+          : []),
+      ],
+    };
+  }
   if (!material) return { topics: [], keyPoints: [], groups: [] };
   const count = Number(/Write (\d+) question/.exec(prompt)?.[1] ?? 1);
   const kinds = (/Use only these types: ([A-Z_, ]+)\./.exec(prompt)?.[1] ?? 'TRUE_FALSE').split(', ');

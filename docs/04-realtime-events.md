@@ -45,7 +45,7 @@ PresentState = { version, session: { code, topic, joinedCount }, activities: Pre
 | `topic:metoo` | student | `{ topicId, on: boolean }` | insert/delete MeToo |
 | `activity:answer` | student | `{ activityId, round, answer }` | must be LIVE + current round; duplicate → ack with the existing answer |
 | `activity:confidence` | student | `{ activityId, round, confident: boolean \| null }` | update own response |
-| `explain:submit` | student | `{ activityId, text }` | ≤ 200, one per device; moderated (stealth): a blocked answer is stored **without text** (so the device can't resend) and counted as flagged; stored / blocked / duplicate get the same ack `MyResponse` |
+| `explain:submit` | student | `{ activityId, text }` | ≤ 1000, one per device; moderated (stealth): a blocked answer is stored **without text** (so the device can't resend) and counted as flagged; stored / blocked / duplicate get the same ack `MyResponse` |
 | `activity:launch` | host/present | `{ activityId, timerSec? }` | one-live rule; `timerSec` sets `closesAt`; clears any projected item |
 | `activity:close` | host/present | `{ activityId, reveal?: boolean }` | |
 | `activity:reveal` | host/present | `{ activityId }` | |

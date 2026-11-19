@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import type { AiKeyPointsResult, AiSortResult, HostState } from '@getit/shared';
+import type { AiKeyPointsResult, HostState } from '@getit/shared';
 import { joinAs, startSession } from './helpers';
 
 // AI helpers, part 2 (client side): files read in the browser, Explain drafts, Take-away key points,
@@ -103,8 +103,8 @@ test('Take-away: AI draft key points fill the editor, then publish as usual', as
   await expect(phone.getByTestId('takeaway')).toContainText('Correlation does not imply causation.');
 });
 
-test('Explain: sort answers with AI → tags applied only after confirming', async ({ page, browser }) => {
-  await aiOn(page);
+test('Explain: Grade with AI tags every answer in one click; summary; Undo', async ({ page, browser }) => {
+  test.skip(!!process.env.E2E_BASE_URL, 'grading runs on the server with the fake AI (AI_FAKE=1)');
   const code = await startSession(page);
   await page.request.post(`/api/sessions/${code}/activities`, {
     data: { type: 'EXPLAIN', prompt: "What does the slope b tell you that r doesn't?" },
@@ -112,7 +112,10 @@ test('Explain: sort answers with AI → tags applied only after confirming', asy
   const phones = [await joinAs(browser, code), await joinAs(browser, code), await joinAs(browser, code)];
   const row = page.getByTestId('activity-row').first();
   await row.getByRole('button', { name: 'Launch' }).click();
-  const texts = ['The change in y per unit of x.', 'Rise over run.', 'How strong the relationship is.'];
+  // A longer answer (more than the old 200-character limit) goes through too.
+  const long =
+    'The slope b tells you how much y changes for each one-unit increase in x, in the units of y. '.repeat(3);
+  const texts = [long, 'Rise over run.', 'How strong the relationship is.'];
   for (const [i, p] of phones.entries()) {
     await p.getByRole('textbox', { name: 'Your answer' }).fill(texts[i]!);
     await p.getByRole('button', { name: 'Send' }).click();
@@ -121,28 +124,17 @@ test('Explain: sort answers with AI → tags applied only after confirming', asy
   await row.getByRole('button', { name: 'Close answers' }).click();
   await expect(row.getByTestId('explain-answers').getByRole('listitem')).toHaveCount(3);
 
-  const host = (await (await page.request.get(`/api/sessions/${code}/host`)).json()) as HostState;
-  const id = (t: string) => host.activities[0]!.explainAnswers.find((x) => x.text === t)!.id;
-  await page.route('**/api/activities/*/ai/sort', (r) =>
-    r.fulfill({
-      json: {
-        groups: [
-          { label: 'Change in y per unit of x', tag: 'CORRECT', answerIds: [id(texts[0]!), id(texts[1]!)] },
-          { label: 'Confuses slope with strength', tag: 'MISCONCEPTION', answerIds: [id(texts[2]!)] },
-        ],
-      } satisfies AiSortResult,
-    }),
-  );
-  await row.getByRole('button', { name: 'Sort answers with AI' }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByTestId('ai-answer-groups')).toContainText('Confuses slope with strength');
-  // Nothing is tagged until the instructor confirms.
-  const before = (await (await page.request.get(`/api/sessions/${code}/host`)).json()) as HostState;
-  expect(before.activities[0]!.explainAnswers.every((x) => x.tag === null)).toBe(true);
-  await dialog.getByRole('button', { name: 'Tag 3 answers' }).click();
-  await expect(dialog).toBeHidden();
-  await expect(row.getByRole('button', { name: /Correct \(2\)/ })).toBeVisible();
+  // One click: the server grades and tags; the list updates live (fake AI: 2 right, 1 misconception).
+  await row.getByTestId('ai-grade').click();
+  await expect(row.getByRole('button', { name: /Correct \(2\)/ })).toBeVisible({ timeout: 15_000 });
   await expect(row.getByRole('button', { name: /Misconception \(1\)/ })).toBeVisible();
+  await expect(row.getByTestId('ai-grade-summary')).toContainText('Fake: confuses slope with strength');
+  await expect(page.getByText('AI graded 3 answers')).toBeVisible();
+  await expect(row.getByTestId('ai-grade')).toBeDisabled(); // nothing left untagged
+
+  // Undo puts every answer back to "Not tagged".
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(row.getByRole('button', { name: /Not tagged \(3\)/ })).toBeVisible();
 });
 
 test('Group with AI can be undone', async ({ page, browser }) => {

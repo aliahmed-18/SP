@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { EXPLAIN_MAX } from '@getit/shared';
 import request from 'supertest';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TAKEAWAY_VISIBLE_MS } from '@getit/shared';
@@ -101,12 +102,12 @@ describe('Explain', () => {
     expect(again.state.myResponse).toEqual({ round: 1, answer: null, confident: null });
   });
 
-  it('≤ 200 characters; empty refused; closed refused', async () => {
+  it('≤ EXPLAIN_MAX characters; empty refused; closed refused', async () => {
     const { explain, cmd, phone } = await setup();
     const id = await explain();
     await cmd('activity:launch', id);
     const p = await phone();
-    expect(await submit(p.c, id, 'x'.repeat(201))).toMatchObject({
+    expect(await submit(p.c, id, 'x'.repeat(EXPLAIN_MAX + 1))).toMatchObject({
       ok: false,
       error: { code: 'VALIDATION' },
     });

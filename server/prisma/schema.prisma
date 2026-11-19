@@ -203,7 +203,7 @@ model Response {
   round      Int         @default(1)
   answer     Json? // QUICK_CHECK: number | boolean
   confident  Boolean? // null = skipped
-  text       String? // EXPLAIN: 1–200, moderated
+  text       String? // EXPLAIN: 1–1000 (EXPLAIN_MAX), moderated
   tag        ExplainTag? // EXPLAIN: set by instructor
   createdAt  DateTime    @default(now())
 

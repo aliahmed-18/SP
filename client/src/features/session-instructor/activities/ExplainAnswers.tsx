@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { MonitorUp, MonitorX, Sparkles } from 'lucide-react';
+import { MonitorUp, MonitorX } from 'lucide-react';
 import { toast } from 'sonner';
 import { AI_LIMITS, EXPLAIN_TAGS, type ExplainTag, type HostActivity } from '@getit/shared';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
 import { emitAck } from '@/lib/emit';
 import { cn } from '@/lib/utils';
-import { AiSortDialog } from '../ai/AiSortDialog';
+import { AiGradeButton } from '../ai/AiGradeButton';
 import { useAiEnabled } from '../ai/ai-api';
 import { useHost } from '../host-context';
 import { TAG_LABEL, TAG_STYLE } from './explain-tags';
@@ -17,7 +17,6 @@ type Filter = 'ALL' | 'UNTAGGED' | ExplainTag;
 export function ExplainAnswers({ activity: a }: { activity: HostActivity }) {
   const { getSocket, projectedAnswerId } = useHost();
   const [filter, setFilter] = useState<Filter>('ALL');
-  const [sorting, setSorting] = useState(false);
   const aiEnabled = useAiEnabled();
   const answers = a.explainAnswers;
   const count = (f: Filter) =>
@@ -53,13 +52,8 @@ export function ExplainAnswers({ activity: a }: { activity: HostActivity }) {
         <p className="text-sm">
           <strong className="text-2xl">{answers.length}</strong> {answers.length === 1 ? 'answer' : 'answers'}
         </p>
-        {aiEnabled && answers.length >= AI_LIMITS.explainAnswersMin && (
-          <Button variant="outline" size="sm" onClick={() => setSorting(true)} className="border-primary/40">
-            <Sparkles className="text-attention" /> Sort answers with AI
-          </Button>
-        )}
+        {aiEnabled && answers.length >= AI_LIMITS.explainAnswersMin && <AiGradeButton activity={a} />}
       </div>
-      {sorting && <AiSortDialog activity={a} onClose={() => setSorting(false)} />}
       {answers.length > 0 && (
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter answers">
           {(['ALL', 'UNTAGGED', ...EXPLAIN_TAGS] as Filter[]).map((f) => (

@@ -1,3 +1,4 @@
+import { cleanText, containsRestrictedWord, passesCharacterRules, type ModerationResult } from './moderation';
 // Pure rules shared by client and server (CLAUDE.md §5). Each has Vitest tests in rules.test.ts.
 
 // ─── Topics ─────────────────────────────────────────────────────────────────
@@ -154,4 +155,17 @@ export function parseNumericAnswer(input: string): number | null {
   if (!/^-?(\d+\.?\d*|\.\d+)(e-?\d+)?$/i.test(western)) return null;
   const n = Number(western);
   return Number.isFinite(n) && Math.abs(n) <= 1e12 ? n : null;
+}
+
+/**
+ * Moderation for written (Explain) answers: the same rules as questions (ported moderation.ts), but with
+ * the answer's own length limit — moderateQuestion's 300-character rule would silently block a long,
+ * correct answer.
+ */
+export function moderateAnswer(input: string, max: number): ModerationResult {
+  const text = cleanText(input);
+  if (!text) return { ok: false, reason: 'empty' };
+  if ([...text].length > max) return { ok: false, reason: 'too_long' };
+  if (!passesCharacterRules(text) || containsRestrictedWord(text)) return { ok: false, reason: 'blocked' };
+  return { ok: true, text };
 }

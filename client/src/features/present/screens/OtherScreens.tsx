@@ -1,5 +1,6 @@
 import { CircleCheck, MessageSquareText, Users } from 'lucide-react';
 import type { ProjectedTopic } from '@getit/shared';
+import { cn } from '@/lib/utils';
 
 /** A Q&A topic pushed from the host: anonymous questions + the reply. */
 export function TopicScreen({ topic }: { topic: ProjectedTopic }) {
@@ -79,7 +80,11 @@ export function MisconceptionScreen({ prompt, text }: { prompt: string; text: st
       </p>
       <blockquote
         id="misconception"
-        className="rounded-3xl border-l-8 border-attention bg-attention/10 p-10 text-5xl leading-snug font-semibold"
+        className={cn(
+          'rounded-3xl border-l-8 border-attention bg-attention/10 p-10 leading-snug font-semibold',
+          // Longer answers (up to 1000 characters) stay readable and on one screen.
+          text.length > 400 ? 'text-2xl' : text.length > 160 ? 'text-3xl' : 'text-5xl',
+        )}
         dir="auto"
       >
         “{text}”

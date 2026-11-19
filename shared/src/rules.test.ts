@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { EXPLAIN_MAX } from './constants';
+import { moderateQuestion } from './moderation';
 import {
   answerLabel,
+  moderateAnswer,
   isCorrect,
   parseNumericAnswer,
   questionsTsv,
@@ -178,5 +181,25 @@ describe('answers on phones', () => {
     expect(answerLabel('MCQ', ['r = 0.45', 'r = −0.92'], 1)).toBe('B · r = −0.92');
     expect(answerLabel('TRUE_FALSE', [], false)).toBe('False');
     expect(answerLabel('NUMERIC', [], 43.04)).toBe('43.04');
+  });
+});
+
+describe('moderateAnswer (Explain answers, up to EXPLAIN_MAX)', () => {
+  const long =
+    'The slope b tells you how much y changes for each one-unit increase in x, in the units of y, ' +
+    'while r only tells you how strong and in which direction the linear relationship is. '.repeat(4);
+  it('accepts a long, clean answer (moderateQuestion would refuse it at 300 characters)', () => {
+    expect(long.length).toBeGreaterThan(300);
+    expect(moderateQuestion(long)).toEqual({ ok: false, reason: 'too_long' });
+    expect(moderateAnswer(long, EXPLAIN_MAX)).toEqual({ ok: true, text: long.trim() });
+  });
+  it('still blocks the same words and characters; too long and empty are their own reasons', () => {
+    expect(moderateAnswer(`${long} this is shit`, EXPLAIN_MAX)).toEqual({ ok: false, reason: 'blocked' });
+    expect(moderateAnswer('nice 🙂', EXPLAIN_MAX)).toEqual({ ok: false, reason: 'blocked' });
+    expect(moderateAnswer('x'.repeat(EXPLAIN_MAX + 1), EXPLAIN_MAX)).toEqual({
+      ok: false,
+      reason: 'too_long',
+    });
+    expect(moderateAnswer('   ', EXPLAIN_MAX)).toEqual({ ok: false, reason: 'empty' });
   });
 });

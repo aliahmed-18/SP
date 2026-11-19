@@ -34,7 +34,8 @@ export const DEFAULT_PRESENT_SETTINGS: { timerSec: 0 | 30 | 60 | 90; autoReveal:
   autoReveal: true,
 };
 
-export const EXPLAIN_MAX = 200;
+/** Explain answers: a few sentences (about 150 words) — room to explain, still readable on a phone. */
+export const EXPLAIN_MAX = 1000;
 
 export const TAKEAWAY_LIMITS = { keyPoints: 10, keyPointMax: 300 } as const;
 
@@ -52,7 +53,7 @@ export const AI_LIMITS = {
   filesMax: 8,
   fileSizeMaxMb: 60,
   noteMax: 300,
-  /** Sorting Explain answers needs a few to compare. */
-  explainAnswersMin: 3,
+  /** Grading Explain answers with AI: any number from one. */
+  explainAnswersMin: 1,
   explainAnswersMax: 300,
 } as const;

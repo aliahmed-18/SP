@@ -27,6 +27,16 @@ export function HomePage() {
         <ThemeToggle />
       </header>
 
+      {/* The slogan, always centred on the page (every screen size). */}
+      <div className="relative flex justify-center px-4 pb-6 sm:px-6">
+        <p className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-accent px-4 py-1.5 text-center font-medium text-accent-foreground">
+          <span aria-hidden className="text-attention">
+            ✦
+          </span>
+          Make sure your students get it.
+        </p>
+      </div>
+
       {/* Phones/tablets: headline under the logo → For instructors → For students → the rest.
           Laptop (lg): headline + details on the left, the two cards on the right. */}
       <main className="relative mx-auto grid max-w-6xl gap-8 px-4 pb-16 sm:px-6 lg:grid-cols-[1fr_minmax(0,32rem)] lg:content-start lg:gap-x-16 lg:gap-y-6 lg:pt-6">
@@ -34,12 +44,6 @@ export function HomePage() {
           aria-labelledby="hero-title"
           className="flex flex-col gap-5 lg:col-start-1 lg:row-start-1 lg:gap-6"
         >
-          <p className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-accent px-4 py-1.5 font-medium text-accent-foreground">
-            <span aria-hidden className="text-attention">
-              ✦
-            </span>
-            Make sure your students get it.
-          </p>
           <h1 id="hero-title" className="text-4xl font-bold tracking-tight sm:text-6xl">
             {HERO_WORDS.map((w) => (
               <span key={w} className="block">

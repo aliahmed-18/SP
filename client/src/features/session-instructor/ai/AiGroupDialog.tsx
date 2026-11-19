@@ -65,6 +65,7 @@ export function AiGroupDialog({
   }, [mutate]);
 
   const text = new Map(state.questions.map((q) => [q.id, q.text]));
+  const ungroupedIds = new Set(state.questions.filter((q) => !q.topicId).map((q) => q.id));
   const chosen = rows.filter((r) => r.on && r.title.trim());
   const update = (i: number, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -75,16 +76,19 @@ export function AiGroupDialog({
     const moved: string[] = [];
     try {
       for (const r of chosen) {
+        // Questions removed or grouped by hand since the suggestion are left out.
+        const questionIds = r.questionIds.filter((id) => ungroupedIds.has(id));
+        if (questionIds.length === 0) continue;
         if (r.topicId) {
           await api(`/topics/${r.topicId}/questions`, {
             method: 'POST',
-            body: JSON.stringify({ questionIds: r.questionIds }),
+            body: JSON.stringify({ questionIds }),
           });
-          moved.push(...r.questionIds);
+          moved.push(...questionIds);
         } else {
           const t = await api<HostTopic>(`/sessions/${code}/topics`, {
             method: 'POST',
-            body: JSON.stringify({ title: r.title.trim(), questionIds: r.questionIds }),
+            body: JSON.stringify({ title: r.title.trim(), questionIds }),
           });
           created.push(t.id);
         }
@@ -113,7 +117,7 @@ export function AiGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Group with AI</DialogTitle>
           <DialogDescription>

@@ -15,7 +15,12 @@ const envSchema = z.object({
   CLIENT_ORIGIN: z.string().url().default('http://localhost:5173'),
   /** Optional (stretch): enables the AI helpers. Empty = AI buttons hidden, everything else works. */
   GEMINI_API_KEY: z.string().trim().optional(),
-  GEMINI_MODEL: z.string().trim().min(1).default('gemini-2.5-flash'),
+  /** Default: Google's alias for its newest Flash model (specific versions get retired). Empty = default. */
+  GEMINI_MODEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v || 'gemini-flash-latest'),
 });
 
 export type Env = z.infer<typeof envSchema>;

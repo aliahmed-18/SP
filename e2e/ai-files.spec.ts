@@ -50,6 +50,10 @@ test('upload slides: PDF, PowerPoint (with notes), Word and HTML are read in the
   await expect(files.getByText('Text ready')).toHaveCount(4, { timeout: 15_000 });
   await expect(files).toContainText('Old .doc/.ppt files are not supported');
 
+  // Picture-only slides and a scanned PDF: a clear message, never sent as empty "text".
+  await dialog.getByTestId('ai-file-input').setInputFiles([fixture('pictures.pptx'), fixture('scanned.pdf')]);
+  await expect(files.getByText('No readable text found')).toHaveCount(2, { timeout: 15_000 });
+
   await dialog.getByLabel('Note for the AI (optional)').fill('Focus on the main formulas');
   await dialog.getByRole('button', { name: 'Explain', exact: true }).click();
   await dialog.getByTestId('ai-generate').click();
@@ -59,12 +63,21 @@ test('upload slides: PDF, PowerPoint (with notes), Word and HTML are read in the
   expect(sent!.kinds).toContain('EXPLAIN');
   for (const t of [
     'R squared equals r squared', // PDF
-    'Slide 2', // PowerPoint
-    'the slope has the units of y per unit of x', // speaker notes
     'Correlation does not imply causation.', // Word
+    'Table cell: r squared', // Word table
+    'ما الفرق بين معامل الارتباط والميل؟', // Arabic in Word
     'Residuals sum to zero', // HTML
   ])
     expect(sent!.text).toContain(t);
+  // PowerPoint (made with python-pptx; "Correlation" was dragged to the front): presentation order,
+  // and each slide with its own speaker notes.
+  const deck = sent!.text.slice(sent!.text.indexOf('--- slides.pptx ---'));
+  const at = (t: string) => deck.indexOf(t);
+  expect(at('Slide 1\nCorrelation')).toBeGreaterThan(0);
+  expect(at('NOTE-C: r has no units.')).toBeGreaterThan(at('Slide 1'));
+  expect(at('NOTE-C: r has no units.')).toBeLessThan(at('Slide 2\nLeast squares'));
+  expect(at('NOTE-A')).toBeLessThan(at('Slide 3\nThe slope'));
+  expect(at('NOTE-B: the slope has the units of y per unit of x.')).toBeGreaterThan(at('Slide 3'));
   expect(sent!.text).not.toContain('var x=1'); // HTML scripts and styles are dropped
   expect(sent!.text).not.toContain('color:red');
 

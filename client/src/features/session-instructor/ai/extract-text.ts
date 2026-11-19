@@ -88,29 +88,73 @@ async function zip(file: File) {
 
 const slideNumber = (path: string) => Number(/(\d+)\.xml$/.exec(path)?.[1] ?? 0);
 
+type Zip = Awaited<ReturnType<typeof zip>>;
+
+/** Relationship id → target path (resolved against `dir`) from an Office .rels part. */
+async function relations(z: Zip, relsPath: string, dir: string): Promise<Map<string, string>> {
+  const rels = z.file(relsPath);
+  const map = new Map<string, string>();
+  if (!rels) return map;
+  const doc = new DOMParser().parseFromString(await rels.async('string'), 'application/xml');
+  for (const r of Array.from(doc.getElementsByTagName('Relationship'))) {
+    const id = r.getAttribute('Id');
+    const target = r.getAttribute('Target');
+    if (id && target) map.set(id, resolvePath(dir, target));
+  }
+  return map;
+}
+
+/** "ppt/slides" + "../notesSlides/notesSlide3.xml" → "ppt/notesSlides/notesSlide3.xml". */
+function resolvePath(dir: string, target: string) {
+  const parts = target.startsWith('/') ? [] : dir.split('/');
+  for (const seg of target.replace(/^\//, '').split('/')) {
+    if (seg === '..') parts.pop();
+    else if (seg !== '.') parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+/**
+ * Slides in presentation order (presentation.xml), each with its own speaker notes (found through the
+ * slide's relationships — notes file numbers don't follow slide numbers after slides are reordered).
+ */
 async function pptxText(file: File): Promise<string> {
   const z = await zip(file);
-  const parts = (prefix: string) =>
-    Object.keys(z.files)
-      .filter((p) => p.startsWith(prefix) && p.endsWith('.xml'))
-      .sort((a, b) => slideNumber(a) - slideNumber(b));
-  const slides = parts('ppt/slides/slide');
-  if (slides.length === 0) throw new ExtractError(INVALID);
-  const notes = new Map(
-    await Promise.all(
-      parts('ppt/notesSlides/notesSlide').map(
-        async (p) => [slideNumber(p), xmlParagraphs(await z.file(p)!.async('string'), 'a:p', 'a:t')] as const,
-      ),
-    ),
-  );
-  const out: string[] = [];
-  for (const p of slides) {
-    const n = slideNumber(p);
-    const body = xmlParagraphs(await z.file(p)!.async('string'), 'a:p', 'a:t');
-    // Speaker notes often hold the explanation; the slide number placeholder is noise.
-    const note = (notes.get(n) ?? []).filter((t) => t.trim() && t.trim() !== String(n));
-    out.push([`Slide ${n}`, ...body, ...(note.length ? ['Notes:', ...note] : [])].join('\n'));
+  let slides: string[] = [];
+  const pres = z.file('ppt/presentation.xml');
+  if (pres) {
+    const rels = await relations(z, 'ppt/_rels/presentation.xml.rels', 'ppt');
+    const doc = new DOMParser().parseFromString(await pres.async('string'), 'application/xml');
+    slides = Array.from(doc.getElementsByTagName('p:sldId'))
+      .map((el) => rels.get(el.getAttribute('r:id') ?? ''))
+      .filter((p): p is string => !!p && !!z.file(p));
   }
+  if (slides.length === 0)
+    // No usable presentation.xml: fall back to file names.
+    slides = Object.keys(z.files)
+      .filter((p) => /^ppt\/slides\/slide\d+\.xml$/.test(p))
+      .sort((a, b) => slideNumber(a) - slideNumber(b));
+  if (slides.length === 0) throw new ExtractError(INVALID);
+
+  const out: string[] = [];
+  let hasText = false;
+  for (const [i, p] of slides.entries()) {
+    const body = xmlParagraphs(await z.file(p)!.async('string'), 'a:p', 'a:t');
+    const name = p.split('/').pop()!;
+    const rels = await relations(z, `ppt/slides/_rels/${name}.rels`, 'ppt/slides');
+    const notesPath = [...rels.values()].find((t) => t.startsWith('ppt/notesSlides/'));
+    const notesFile = notesPath ? z.file(notesPath) : null;
+    // Speaker notes often hold the explanation; the slide-number placeholder is noise.
+    const note = notesFile
+      ? xmlParagraphs(await notesFile.async('string'), 'a:p', 'a:t').filter(
+          (t) => t.trim() && !/^\d+$/.test(t.trim()),
+        )
+      : [];
+    if ([...body, ...note].some((t) => t.trim())) hasText = true;
+    out.push([`Slide ${i + 1}`, ...body, ...(note.length ? ['Notes:', ...note] : [])].join('\n'));
+  }
+  // Only "Slide N" labels = the slides are pictures.
+  if (!hasText) throw new ExtractError(EMPTY);
   return out.join('\n\n');
 }
 

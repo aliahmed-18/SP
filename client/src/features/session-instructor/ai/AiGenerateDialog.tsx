@@ -106,7 +106,7 @@ export function AiGenerateDialog({
           <div className="flex flex-col items-center gap-3 py-10 text-center" role="status">
             <Spinner decorative className="!size-8" />
             <p className="font-medium">Preparing drafts…</p>
-            <p className="text-sm text-muted-foreground">This can take up to 20 seconds.</p>
+            <p className="text-sm text-muted-foreground">This can take up to a minute.</p>
           </div>
         ) : drafts ? (
           <ul className="flex flex-col gap-3" data-testid="ai-drafts">

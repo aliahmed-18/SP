@@ -29,6 +29,12 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
       .json({ error: { code: 'VALIDATION', message: err.issues[0]?.message ?? 'Invalid input.' } });
     return;
   }
+  if (typeof err === 'object' && err && 'type' in err && err.type === 'entity.too.large') {
+    res
+      .status(413)
+      .json({ error: { code: 'TOO_LARGE', message: "That's too much text. Send a shorter one." } });
+    return;
+  }
   // express.json() parse errors
   if (typeof err === 'object' && err && 'type' in err && err.type === 'entity.parse.failed') {
     res.status(400).json({ error: { code: 'BAD_JSON', message: 'Invalid JSON body.' } });

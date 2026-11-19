@@ -42,7 +42,8 @@ export function createApp() {
       crossOriginEmbedderPolicy: false,
     }),
   );
-  app.use(express.json({ limit: '100kb' }));
+  // 30 000 characters of slide text (AI generation) can be ~120 KB in UTF-8 (Arabic, maths symbols).
+  app.use(express.json({ limit: '256kb' }));
   app.use(cookieParser());
 
   const api = express.Router();

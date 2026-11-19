@@ -43,6 +43,16 @@ Start a session, then join from a phone or a second browser window with the code
 - No Docker? Any local PostgreSQL 16 works. Create a `getit` user (password `getit`) that owns the databases `getit` and `getit_test`.
 - Already ran Docker before `server/prisma/init-test-db.sql` existed? Run `docker compose exec db createdb -U getit getit_test` once.
 
+## Let phones join a laptop demo (`npm run share`)
+
+Phones can't open `localhost`. With the app running (`npm run dev`, or `npm run build && npm start`), run in a second terminal:
+
+```bash
+npm run share
+```
+
+It starts a free Cloudflare quick tunnel (no account, https, works on campus Wi-Fi) and prints a public address like `https://xyz.trycloudflare.com`. The QR code and the projector switch to it by themselves; keep working on `localhost`. `Ctrl + C` stops sharing. Install `cloudflared` once first: `winget install --id Cloudflare.cloudflared` (Windows) or `brew install cloudflared` (macOS). For a hosted deployment, set `PUBLIC_URL` instead (optional).
+
 ## Commands
 
 | Command | What it does |

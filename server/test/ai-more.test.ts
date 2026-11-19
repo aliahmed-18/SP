@@ -1,13 +1,13 @@
 // AI helpers, part 2: Explain drafts + note, Take-away key points, sorting Explain answers. Fake AI.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AiGradeResult, AiKeyPointsResult } from '@getit/shared';
+import type { AiGradeResult, AiKeyPointsResult, HostState } from '@getit/shared';
 import { prisma } from '../src/db';
 import { toAnswerGroups, toKeyPoints } from '../src/lib/ai-output';
 import type { AiRequest } from '../src/lib/gemini';
 import { hashDevice } from '../src/lib/deviceHash';
 import { aiLimiter } from '../src/routes/ai';
 import { setAiClient } from '../src/services/ai';
-import { clearAiJobs } from '../src/services/ai-job-store';
+import { clearAiJobs, waitForAiJob } from '../src/services/ai-job-store';
 import { generate, newDeviceId, newInstructor, newSession, resetDb } from './helpers';
 
 beforeEach(async () => {
@@ -146,5 +146,45 @@ describe('AI output checks, part 2 (pure)', () => {
     expect(toKeyPoints({ keyPoints: many })).toHaveLength(5);
     expect(toKeyPoints({ keyPoints: ['this is shit', 'x'.repeat(400), 'ok'] })).toEqual(['ok']);
     expect(toAnswerGroups('junk', [])).toEqual([]);
+  });
+});
+
+describe('grade all written answers (background)', () => {
+  it('grades every closed Explain with untagged answers, one after another; Undo ids returned', async () => {
+    const { agent } = await newInstructor();
+    const s = await newSession(agent);
+    const make = async (prompt: string, texts: string[]) => {
+      const a = (await agent.post(`/api/sessions/${s.code}/activities`).send({ type: 'EXPLAIN', prompt }))
+        .body as {
+        id: string;
+      };
+      await prisma.activity.update({ where: { id: a.id }, data: { status: 'CLOSED' } });
+      for (const text of texts)
+        await prisma.response.create({
+          data: { activityId: a.id, deviceHash: hashDevice(newDeviceId()), text },
+        });
+      return a.id;
+    };
+    await make('What is b?', ['Change in y per x', 'How strong it is']);
+    await make('What is r?', ['Strength of a linear relationship']);
+    setAiClient(null);
+    setAiClient(async (req) => {
+      const n = (/<answers>\n([\s\S]*?)\n<\/answers>/.exec(req.prompt)?.[1] ?? '').split('\n').length;
+      return {
+        groups: [{ label: 'Fine', tag: 'CORRECT', answers: Array.from({ length: n }, (_, i) => i + 1) }],
+      };
+    });
+    const res = await agent.post(`/api/sessions/${s.code}/ai/grade-all`);
+    expect(res.status).toBe(202);
+    expect(res.body.job).toMatchObject({ status: 'running', activities: 2, done: 0 });
+    await waitForAiJob(s.id);
+    const host = (await agent.get(`/api/sessions/${s.code}/host`)).body as HostState;
+    expect(host.aiGrade).toMatchObject({ status: 'done', activities: 2, done: 2, graded: 3 });
+    expect(host.aiGrade!.changedIds).toHaveLength(3);
+    expect(await prisma.response.count({ where: { tag: 'CORRECT' } })).toBe(3);
+    // Nothing left: a second click says so at once.
+    const again = await agent.post(`/api/sessions/${s.code}/ai/grade-all`);
+    expect(again.status).toBe(409);
+    expect(again.body.error.code).toBe('NOTHING_TO_GRADE');
   });
 });

@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { FolderInput, Layers, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
+import { FolderInput, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AiTopicSuggestion, HostState, HostTopic } from '@getit/shared';
-import { Spinner } from '@/components/brand/brand';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,8 +14,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { AI_PRIVACY_NOTE, aiApi } from './ai-api';
-import { Elapsed } from './Elapsed';
+import { AI_PRIVACY_NOTE } from './ai-api';
 
 type Row = AiTopicSuggestion & { on: boolean };
 
@@ -34,36 +31,22 @@ async function undo(created: string[], moved: string[]) {
 }
 
 /**
- * "Group with AI" (MVP: Classify): the AI proposes topics for the ungrouped questions of the current
- * part; the instructor ticks, renames and applies them. Applying uses the normal topic endpoints.
- * Render it only while open.
+ * "Group with AI" (MVP: Classify), review step: the server grouped the questions in the background and
+ * this pops up with its suggestions; the instructor ticks, renames and applies them (normal topic
+ * endpoints, with Undo). Closing or applying dismisses the suggestions. Mount it only while open.
  */
 export function AiGroupDialog({
   state,
-  open,
-  onOpenChange,
+  suggestions,
+  onClose,
 }: {
   state: HostState;
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
+  suggestions: AiTopicSuggestion[];
+  onClose: () => void;
 }) {
   const code = state.session.code;
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<Row[]>(() => suggestions.map((s) => ({ ...s, on: true })));
   const [applying, setApplying] = useState(false);
-  const suggest = useMutation({
-    mutationFn: () => aiApi.group(code),
-    onSuccess: (r) => setRows(r.suggestions.map((s) => ({ ...s, on: true }))),
-  });
-  const { mutate } = suggest;
-
-  // Mounted only while open (see QaPanel), so each opening asks once and starts fresh.
-  // A ref, not state: React's dev double-run of effects must not spend two AI requests.
-  const asked = useRef(false);
-  useEffect(() => {
-    if (asked.current) return;
-    asked.current = true;
-    mutate();
-  }, [mutate]);
 
   const text = new Map(state.questions.map((q) => [q.id, q.text]));
   const ungroupedIds = new Set(state.questions.filter((q) => !q.topicId).map((q) => q.id));
@@ -111,39 +94,21 @@ export function AiGroupDialog({
       duration: 10_000,
       action: { label: 'Undo', onClick: () => void undo(created, moved) },
     });
-    onOpenChange(false);
+    onClose();
   }
 
-  const error = suggest.error instanceof ApiRequestError ? suggest.error.message : 'Something went wrong.';
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Group with AI</DialogTitle>
           <DialogDescription>
-            Suggested topics for this part's questions that aren't in a topic yet. Untick or rename any before
-            you apply them.
+            The AI grouped this part's questions that aren't in a topic yet. Untick or rename any before you
+            apply them.
           </DialogDescription>
         </DialogHeader>
 
-        {suggest.isPending ? (
-          <div className="flex flex-col items-center gap-3 py-10 text-center" role="status">
-            <Spinner decorative className="!size-8" />
-            <p className="font-medium">Reading the questions…</p>
-            <p className="text-sm text-muted-foreground">
-              This can take up to a minute. <Elapsed />
-            </p>
-          </div>
-        ) : suggest.isError ? (
-          <div className="flex flex-col items-center gap-3 py-8 text-center" data-testid="ai-error">
-            <p className="font-medium">{error}</p>
-            <p className="text-sm text-muted-foreground">You can still group questions by hand.</p>
-            <Button variant="outline" onClick={() => mutate()}>
-              <RotateCcw /> Try again
-            </Button>
-          </div>
-        ) : rows.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="py-8 text-center text-muted-foreground">
             No clear groups yet. Try again when more questions come in.
           </p>
@@ -198,13 +163,10 @@ export function AiGroupDialog({
 
         <p className="text-xs text-muted-foreground">{AI_PRIVACY_NOTE}</p>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={() => void apply()}
-            disabled={chosen.length === 0 || applying || suggest.isPending}
-          >
+          <Button onClick={() => void apply()} disabled={chosen.length === 0 || applying}>
             <Layers />
             {chosen.length <= 1 ? 'Apply topic' : `Apply ${chosen.length} topics`}
           </Button>

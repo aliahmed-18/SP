@@ -2,6 +2,7 @@ import { Router, type Request } from 'express';
 import { codeParamSchema, deviceIdSchema, type PublicSessionInfo } from '@getit/shared';
 import { HttpError } from '../lib/errors';
 import { hashDevice } from '../lib/deviceHash';
+import { publicUrl } from '../lib/public-url';
 import { parse } from '../lib/validate';
 import { buildStudentState } from '../realtime/broadcast';
 import { joinSession } from '../services/participants';
@@ -16,6 +17,12 @@ function deviceHashOf(req: Request): string {
     throw new HttpError(400, 'DEVICE_ID_REQUIRED', 'Please reload the page and try again.');
   return hashDevice(parsed.data);
 }
+
+/** Where phones should go (QR): a tunnel / public address when the app runs on a laptop, else null. */
+publicRouter.get('/public/config', (_req, res) => {
+  res.setHeader('cache-control', 'no-store');
+  res.json({ publicUrl: publicUrl() });
+});
 
 publicRouter.get('/public/sessions/:code', async (req, res) => {
   const { code } = parse(codeParamSchema, req.params);

@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { AiGroupResult, HostState } from '@getit/shared';
 import { ask, joinAs, startSession } from './helpers';
 
 // AI helpers, client side. Grouping replies are faked at the network edge; generation runs on the
@@ -15,38 +14,40 @@ async function aiOn(page: Page) {
   await page.route('**/api/ai/status', (r) => r.fulfill({ json: { enabled: true } }));
 }
 
-test('Group with AI: review, rename, apply → a real topic that phones see', async ({ page, browser }) => {
-  await aiOn(page);
+test('Group with AI runs in the background; the suggestions pop up; rename, apply → a topic phones see', async ({
+  page,
+  browser,
+}) => {
+  test.skip(!!process.env.E2E_BASE_URL, 'grouping runs on the server with the fake AI (AI_FAKE=1)');
   const code = await startSession(page);
   const phones = [await joinAs(browser, code), await joinAs(browser, code), await joinAs(browser, code)];
   await ask(phones[0]!, 'How do we get Sxy from the table?');
   await ask(phones[1]!, 'How do we compute the slope b?');
   await ask(phones[2]!, 'What does r = 0 mean?');
 
-  const host = (await (await page.request.get(`/api/sessions/${code}/host`)).json()) as HostState;
-  const id = (t: string) => host.questions.find((q) => q.text.includes(t))!.id;
-  let calls = 0;
-  await page.route(`**/api/sessions/${code}/ai/group`, (r) => {
-    calls++;
-    return r.fulfill({
-      json: {
-        suggestions: [{ title: 'Slope', topicId: null, questionIds: [id('Sxy'), id('slope b')] }],
-      } satisfies AiGroupResult,
-    });
-  });
+  // One click starts it; no dialog to wait in — the instructor keeps going.
+  await page.getByTestId('ai-group').click();
+  await expect(page.getByText('Grouping questions in the background')).toBeVisible();
+  await expect(page.getByTestId('ai-group')).toContainText('Grouping…');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Group with AI' }).click();
+  // When the AI is done, the suggestions pop up (fake AI: all three in one topic).
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByTestId('ai-suggestions')).toContainText('How do we get Sxy from the table?');
+  await expect(dialog.getByTestId('ai-suggestions')).toContainText('How do we get Sxy from the table?', {
+    timeout: 15_000,
+  });
   await expect(dialog).toContainText('without any student identity');
   await dialog.getByRole('textbox', { name: 'Topic title' }).fill('Computing the slope');
   await dialog.getByRole('button', { name: 'Apply topic' }).click();
   await expect(dialog).toBeHidden();
-  expect(calls).toBe(1); // one AI request per opening
 
   await page.getByRole('tab', { name: /Topics/ }).click();
   await expect(page.getByTestId('host-topic')).toContainText('Computing the slope');
   await expect(phones[0]!.getByTestId('student-topic')).toContainText('Computing the slope');
+  // Applied = dismissed: a reload doesn't pop the suggestions up again.
+  await page.reload();
+  await expect(page.getByTestId('ai-group')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 const generation =

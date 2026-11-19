@@ -162,6 +162,10 @@ export type HostState = {
   projectedAnswerId: string | null;
   /** The AI generation running (or just finished) on the server for this session, or null. */
   aiJob: AiJob | null;
+  /** "Group with AI" running in the background, or its suggestions waiting for the instructor. */
+  aiGroup: AiGroupJob | null;
+  /** "Grade all written answers" running in the background (or just finished). */
+  aiGrade: AiGradeJob | null;
   serverTime: string;
 };
 
@@ -272,5 +276,29 @@ export type AiGradeResult = {
   graded: number;
   counts: Record<ExplainTag, number>;
   groups: { label: string; tag: ExplainTag; count: number }[];
+  changedIds: string[];
+};
+
+/** Background "Group with AI": when done, the page pops up the suggestions to review and apply. */
+export type AiGroupJob = {
+  status: 'running' | 'done' | 'failed';
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+  suggestions: AiTopicSuggestion[];
+};
+
+/** Background "Grade all written answers": every closed Explain, one after another. */
+export type AiGradeJob = {
+  status: 'running' | 'done' | 'failed';
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+  /** Explain activities to grade / graded so far. */
+  activities: number;
+  done: number;
+  graded: number;
+  counts: Record<ExplainTag, number>;
+  /** Answers the AI tagged (Undo clears these). */
   changedIds: string[];
 };

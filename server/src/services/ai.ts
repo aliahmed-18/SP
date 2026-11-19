@@ -57,8 +57,8 @@ const groupSchema = {
   required: ['topics'],
 };
 
-/** Suggest topics for the newest ungrouped questions of the current part (topics live in one part). */
-export async function suggestTopics(sessionId: string): Promise<AiGroupResult> {
+/** The questions "Group with AI" would read: the newest ungrouped ones of the current part. */
+async function groupable(sessionId: string) {
   const part = await prisma.part.findFirstOrThrow({ where: { sessionId }, orderBy: { number: 'desc' } });
   const questions = (
     await prisma.question.findMany({
@@ -68,12 +68,25 @@ export async function suggestTopics(sessionId: string): Promise<AiGroupResult> {
       select: { id: true, text: true },
     })
   ).reverse();
-  if (questions.length < AI_LIMITS.groupQuestionsMin)
-    throw new HttpError(
-      400,
-      'NOT_ENOUGH_QUESTIONS',
-      `Group with AI needs at least ${AI_LIMITS.groupQuestionsMin} questions that aren't in a topic yet.`,
-    );
+  return { part, questions };
+}
+
+const NOT_ENOUGH = () =>
+  new HttpError(
+    400,
+    'NOT_ENOUGH_QUESTIONS',
+    `Group with AI needs at least ${AI_LIMITS.groupQuestionsMin} questions that aren't in a topic yet.`,
+  );
+
+/** Checked before starting the background job, so the instructor hears it at once. */
+export async function assertCanGroup(sessionId: string) {
+  if ((await groupable(sessionId)).questions.length < AI_LIMITS.groupQuestionsMin) throw NOT_ENOUGH();
+}
+
+/** Suggest topics for the newest ungrouped questions of the current part (topics live in one part). */
+export async function suggestTopics(sessionId: string): Promise<AiGroupResult> {
+  const { part, questions } = await groupable(sessionId);
+  if (questions.length < AI_LIMITS.groupQuestionsMin) throw NOT_ENOUGH();
   const topics = await prisma.topic.findMany({
     where: { sessionId, partId: part.id },
     orderBy: { createdAt: 'asc' },

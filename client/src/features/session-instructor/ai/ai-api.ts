@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import type {
   AiGenerateInput,
   AiJob,
-  AiGroupResult,
+  AiGradeJob,
+  AiGroupJob,
   AiKeyPointsResult,
   AiGradeResult,
   AiStatus,
@@ -30,7 +31,11 @@ export const aiApi = {
   keyPoints: (code: string) => api<AiKeyPointsResult>(`/sessions/${code}/ai/keypoints`, { method: 'POST' }),
   gradeAnswers: (activityId: string) =>
     api<AiGradeResult>(`/activities/${activityId}/ai/grade`, { method: 'POST' }),
-  group: (code: string) => api<AiGroupResult>(`/sessions/${code}/ai/group`, { method: 'POST' }),
+  /** Starts "Group with AI" in the background; the suggestions pop up when ready (HostState.aiGroup). */
+  group: (code: string) => api<{ job: AiGroupJob }>(`/sessions/${code}/ai/group`, { method: 'POST' }),
+  dismissGroup: (code: string) => api(`/sessions/${code}/ai/group/dismiss`, { method: 'POST' }),
+  /** "Grade all written answers" in the background (HostState.aiGrade). */
+  gradeAll: (code: string) => api<{ job: AiGradeJob }>(`/sessions/${code}/ai/grade-all`, { method: 'POST' }),
 };
 
 /** Shown wherever text leaves for the AI service (honest + what professors will ask about). */

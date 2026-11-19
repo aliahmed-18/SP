@@ -13,6 +13,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // `npm run share` (Cloudflare quick tunnel) reaches this dev server under a *.trycloudflare.com name.
+    allowedHosts: ['.trycloudflare.com'],
     // Same origin in dev: cookies and websockets just work.
     proxy: {
       '/api': { target: API, changeOrigin: false },
@@ -21,6 +23,7 @@ export default defineConfig({
   },
   preview: {
     port: 5173,
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/api': { target: API },
       '/socket.io': { target: API, ws: true },

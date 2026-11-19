@@ -4,6 +4,7 @@ import type { ActivityStats, HostActivity, HostState, QuickCheckKind } from '@ge
 import { Button } from '@/components/ui/button';
 import type { GetitSocket } from '@/lib/socket';
 import { AiActivityBar } from '../ai/AiActivityBar';
+import { AiGradeAll } from '../ai/AiGradeAll';
 import { AiGenerateDialog } from '../ai/AiGenerateDialog';
 import { useAiEnabled } from '../ai/ai-api';
 import { activitiesApi } from './activities-api';
@@ -105,6 +106,7 @@ export function ActivitiesSection({
             <span className="text-base font-normal text-muted-foreground">{activities.length}</span>
           )}
         </h2>
+        {aiEnabled && <AiGradeAll code={session.code} job={state.aiGrade} activities={activities} />}
         {!ended && (
           <AiActivityBar
             code={session.code}

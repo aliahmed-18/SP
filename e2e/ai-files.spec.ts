@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import type { AiKeyPointsResult, HostState } from '@getit/shared';
+import type { AiKeyPointsResult } from '@getit/shared';
 import { joinAs, startSession } from './helpers';
 
 // AI helpers, part 2 (client side): files read in the browser, Explain drafts, Take-away key points,
@@ -135,10 +135,18 @@ test('Explain: Grade with AI tags every answer in one click; summary; Undo', asy
   // Undo puts every answer back to "Not tagged".
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(row.getByRole('button', { name: /Not tagged \(3\)/ })).toBeVisible();
+
+  // "Grade all with AI": every written answer of every closed Explain, in the background.
+  await expect(page.getByTestId('ai-grade-all')).toContainText('3 written answers not graded yet');
+  await page.getByTestId('ai-grade-all').getByRole('button', { name: 'Grade all with AI' }).click();
+  await expect(page.getByTestId('ai-grade-job')).toContainText('AI is grading written answers');
+  await expect(row.getByRole('button', { name: /Correct \(2\)/ })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('AI graded 3 written answers')).toBeVisible();
+  await expect(page.getByTestId('ai-grade-all')).toBeHidden(); // nothing left to grade
 });
 
 test('Group with AI can be undone', async ({ page, browser }) => {
-  await aiOn(page);
+  test.skip(!!process.env.E2E_BASE_URL, 'grouping runs on the server with the fake AI (AI_FAKE=1)');
   const code = await startSession(page);
   const phones = [await joinAs(browser, code), await joinAs(browser, code), await joinAs(browser, code)];
   const qs = ['How do we get Sxy?', 'How do we compute b?', 'What is r?'];
@@ -147,18 +155,8 @@ test('Group with AI can be undone', async ({ page, browser }) => {
     await p.getByRole('button', { name: 'Send' }).click();
     await expect(p.getByText('Question sent').last()).toBeVisible();
   }
-  const host = (await (await page.request.get(`/api/sessions/${code}/host`)).json()) as HostState;
-  await page.route(`**/api/sessions/${code}/ai/group`, (r) =>
-    r.fulfill({
-      json: {
-        suggestions: [
-          { title: 'Slope', topicId: null, questionIds: host.questions.slice(1).map((q) => q.id) },
-        ],
-      },
-    }),
-  );
-  await page.getByRole('button', { name: 'Group with AI' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Apply topic' }).click();
+  await page.getByTestId('ai-group').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Apply topic' }).click({ timeout: 15_000 });
   await page.getByRole('tab', { name: /Topics/ }).click();
   await expect(page.getByTestId('host-topic')).toHaveCount(1);
   await page.getByRole('button', { name: 'Undo' }).click();

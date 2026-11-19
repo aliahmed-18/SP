@@ -1,6 +1,6 @@
 // AI helpers (stretch): proposals only, owner only, validated output, graceful failure. Uses a fake AI.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AiGroupResult } from '@getit/shared';
+import type { HostState } from '@getit/shared';
 import { prisma } from '../src/db';
 import { toDrafts, toSuggestions } from '../src/lib/ai-output';
 import { aiTimeout, type AiRequest } from '../src/lib/gemini';
@@ -67,10 +67,15 @@ describe('AI helpers', () => {
       };
     });
     expect((await agent.get('/api/ai/status')).body).toEqual({ enabled: true });
+    // Runs in the background (202); the suggestions wait in the host snapshot until reviewed.
     const res = await agent.post(`/api/sessions/${s.code}/ai/group`);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
+    expect(res.body.job).toMatchObject({ status: 'running', suggestions: [] });
+    await waitForAiJob(s.id);
+    const host = (await agent.get(`/api/sessions/${s.code}/host`)).body as HostState;
+    expect(host.aiGroup).toMatchObject({ status: 'done' });
     const qs = await prisma.question.findMany({ where: { sessionId: s.id }, orderBy: { createdAt: 'asc' } });
-    const { suggestions } = res.body as AiGroupResult;
+    const { suggestions } = host.aiGroup!;
     expect(suggestions).toEqual([
       { title: 'Computing the slope', topicId: null, questionIds: [qs[0]!.id, qs[1]!.id, qs[3]!.id] },
       { title: 'Correlation', topicId: existing.id, questionIds: [qs[2]!.id] },
@@ -84,6 +89,9 @@ describe('AI helpers', () => {
     }
     // A proposal only: nothing was grouped.
     expect(qs.every((q) => q.topicId === null)).toBe(true);
+    // Applied or closed: dismissed, so no pop-up after a reload.
+    expect((await agent.post(`/api/sessions/${s.code}/ai/group/dismiss`)).status).toBe(204);
+    expect(((await agent.get(`/api/sessions/${s.code}/host`)).body as HostState).aiGroup).toBeNull();
   });
 
   it('group: needs at least 3 ungrouped questions, owner only', async () => {

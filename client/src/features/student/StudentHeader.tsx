@@ -1,6 +1,6 @@
 import { DoorOpen, MoreHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { LogoMark } from '@/components/brand/brand';
+import { Wordmark } from '@/components/brand/brand';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +16,7 @@ export function StudentHeader({ topic, children }: { topic: string; children?: R
   return (
     <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
       <div className="mx-auto flex max-w-xl items-center gap-3 px-4 py-3">
-        <LogoMark className="size-9 shrink-0" title="Getit" />
+        <Wordmark className="h-7 w-auto shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 leading-snug font-semibold" dir="auto">
             {topic}

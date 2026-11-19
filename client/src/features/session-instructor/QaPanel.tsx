@@ -1,9 +1,7 @@
-import { useState } from 'react';
-import { Flag, Layers, List, Sparkles } from 'lucide-react';
-import { AI_LIMITS, type HostState } from '@getit/shared';
-import { Button } from '@/components/ui/button';
+import { Flag, Layers, List } from 'lucide-react';
+import type { HostState } from '@getit/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AiGroupDialog } from './ai/AiGroupDialog';
+import { AiGroupButton } from './ai/AiGroupButton';
 import { useAiEnabled } from './ai/ai-api';
 import { QuestionsTab } from './qa/QuestionsTab';
 import { TopicsTab } from './qa/TopicsTab';
@@ -13,8 +11,6 @@ export function QaPanel({ state, onShowQr }: { state: HostState; onShowQr: () =>
   const { questions, topics, session } = state;
   const n = questions.length;
   const aiEnabled = useAiEnabled();
-  const [aiOpen, setAiOpen] = useState(false);
-  const ungrouped = questions.filter((q) => !q.topicId && q.partId === state.parts.at(-1)?.id).length;
   return (
     <aside aria-labelledby="qa-title" className="min-w-0 rounded-2xl border bg-card">
       <Tabs defaultValue={topics.length ? 'topics' : 'list'}>
@@ -46,20 +42,7 @@ export function QaPanel({ state, onShowQr }: { state: HostState; onShowQr: () =>
                 <List /> List <span className="text-xs text-muted-foreground">{n}</span>
               </TabsTrigger>
             </TabsList>
-            {aiEnabled && session.status === 'LIVE' && (
-              <Button
-                size="sm"
-                onClick={() => setAiOpen(true)}
-                disabled={ungrouped < AI_LIMITS.groupQuestionsMin}
-                title={
-                  ungrouped < AI_LIMITS.groupQuestionsMin
-                    ? `Needs at least ${AI_LIMITS.groupQuestionsMin} questions that aren't in a topic`
-                    : undefined
-                }
-              >
-                <Sparkles className="text-attention" /> Group with AI
-              </Button>
-            )}
+            {aiEnabled && session.status === 'LIVE' && <AiGroupButton state={state} />}
           </div>
         </div>
         <div className="p-2 sm:p-4">
@@ -71,7 +54,6 @@ export function QaPanel({ state, onShowQr }: { state: HostState; onShowQr: () =>
           </TabsContent>
         </div>
       </Tabs>
-      {aiEnabled && aiOpen && <AiGroupDialog state={state} open onOpenChange={setAiOpen} />}
     </aside>
   );
 }

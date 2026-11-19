@@ -8,6 +8,11 @@ import type { AiClient } from './gemini';
 export const fakeAiClient: AiClient = async ({ prompt }) => {
   await new Promise((r) => setTimeout(r, Number(process.env.AI_FAKE_DELAY_MS ?? 1500)));
   const material = /<material>\n([\s\S]*?)\n<\/material>/.exec(prompt)?.[1];
+  const questions = /<questions>\n([\s\S]*?)\n<\/questions>/.exec(prompt)?.[1]?.split('\n') ?? [];
+  if (questions.length) {
+    // Grouping: every question in one topic.
+    return { topics: [{ title: 'Fake topic', questions: questions.map((_, i) => i + 1) }] };
+  }
   const answers = /<answers>\n([\s\S]*?)\n<\/answers>/.exec(prompt)?.[1]?.split('\n') ?? [];
   if (answers.length) {
     // Grading: the first half correct, the rest a misconception.

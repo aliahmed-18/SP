@@ -1,9 +1,11 @@
 import type { PresentState } from '@getit/shared';
 import { QrCode } from '@/components/QrCode';
 import { joinUrl } from '@/lib/links';
+import { usePublicOrigin } from '@/lib/public-origin';
 
 /** Shot 05: topic, "Welcome! Scan to join", huge code, QR, live joined count. */
 export function Welcome({ session }: { session: PresentState['session'] }) {
+  const { origin } = usePublicOrigin();
   return (
     <section
       aria-labelledby="present-topic"
@@ -16,7 +18,7 @@ export function Welcome({ session }: { session: PresentState['session'] }) {
         </h1>
         <p className="text-2xl text-muted-foreground">Welcome! Scan to join the session</p>
         <p className="mt-6 text-xl text-muted-foreground">
-          or go to {window.location.host} and enter the code
+          or go to {new URL(origin).host} and enter the code
         </p>
         <p
           className="text-[7rem] leading-none font-bold tracking-[0.15em] text-primary"
@@ -33,7 +35,7 @@ export function Welcome({ session }: { session: PresentState['session'] }) {
         </p>
       </div>
       <QrCode
-        value={joinUrl(session.code)}
+        value={joinUrl(session.code, origin)}
         label={`QR code to join session ${session.code}`}
         className="w-[22rem]"
       />

@@ -4,11 +4,11 @@ import { instructorId, requireInstructor } from '../auth/middleware';
 import { HttpError } from '../lib/errors';
 import { FixedWindowLimiter } from '../lib/rateLimit';
 import { parse } from '../lib/validate';
-import { aiEnabled, gradeExplainAnswers, suggestKeyPoints, suggestTopics } from '../services/ai';
+import { aiEnabled, assertCanGroup, gradeExplainAnswers, suggestKeyPoints } from '../services/ai';
 import { emitHostSnapshot, safeEmit } from '../realtime/broadcast';
-import { isAiJobRunning } from '../services/ai-job-store';
+import { clearJob, isAiJobRunning, isRunning } from '../services/ai-job-store';
 import { ownedActivity } from '../services/qa-access';
-import { startAiJob } from '../realtime/ai-jobs';
+import { startAiJob, startGradeJob, startGroupJob } from '../realtime/ai-jobs';
 import { getHostSession } from '../services/sessions';
 
 // Optional AI helpers (docs/03 §AI). Instructor only; they return proposals and change nothing.
@@ -28,11 +28,34 @@ aiRouter.get('/ai/status', requireInstructor, (_req, res) => {
   res.json({ enabled: aiEnabled() } satisfies AiStatus);
 });
 
+/** "Group with AI" runs in the background (202); the page pops the suggestions up when they're ready. */
 aiRouter.post('/sessions/:code/ai/group', requireInstructor, async (req, res) => {
   const { code } = parse(codeParamSchema, req.params);
   const s = await getHostSession(instructorId(res), code);
+  if (isRunning('group', s.id))
+    throw new HttpError(409, 'AI_JOB_RUNNING', 'Questions are already being grouped.');
+  await assertCanGroup(s.id); // "not enough questions" at once, not after a background wait
   assertReady(res);
-  res.json(await suggestTopics(s.id));
+  res.status(202).json({ job: startGroupJob(s.id) });
+});
+
+/** The instructor applied or closed the suggestions: forget them (no pop-up after a reload). */
+aiRouter.post('/sessions/:code/ai/group/dismiss', requireInstructor, async (req, res) => {
+  const { code } = parse(codeParamSchema, req.params);
+  const s = await getHostSession(instructorId(res), code);
+  if (!isRunning('group', s.id)) clearJob('group', s.id);
+  safeEmit(emitHostSnapshot(s.id));
+  res.status(204).end();
+});
+
+/** "Grade all written answers" with AI, in the background (202). */
+aiRouter.post('/sessions/:code/ai/grade-all', requireInstructor, async (req, res) => {
+  const { code } = parse(codeParamSchema, req.params);
+  const s = await getHostSession(instructorId(res), code);
+  if (isRunning('grade', s.id))
+    throw new HttpError(409, 'AI_JOB_RUNNING', 'Written answers are already being graded.');
+  assertReady(res);
+  res.status(202).json({ job: await startGradeJob(s.id) });
 });
 
 /**

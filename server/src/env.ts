@@ -16,6 +16,8 @@ const envSchema = z.object({
   /** Optional (stretch): enables the AI helpers. Empty = AI buttons hidden, everything else works. */
   GEMINI_API_KEY: z.string().trim().optional(),
   /** Default: Google's alias for its newest Flash model (quality first; versions get retired). Empty = default. */
+  /** Optional: the public address phones should open (QR). `npm run share` sets one for a laptop demo. */
+  PUBLIC_URL: z.string().trim().optional(),
   /** End-to-end tests only: a fake AI instead of Gemini. Refused in production. */
   AI_FAKE: z
     .string()

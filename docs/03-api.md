@@ -66,10 +66,14 @@ Instructor only. They **propose**; nothing is written until the instructor appli
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/ai/status` | `{ enabled }` |
-| POST | `/sessions/:code/ai/group` | `{ suggestions: { title, topicId \| null, questionIds }[] }` for the current part's ungrouped questions (needs ≥ 3). `topicId` = add to that existing topic |
+| POST | `/sessions/:code/ai/group` | **202 `{ job }`, runs in the background**: the suggestions (`{ title, topicId \| null, questionIds }[]`, current part's ungrouped questions, needs ≥ 3 — checked at once) wait in `HostState.aiGroup` and pop up on the host page; `POST …/ai/group/dismiss` after apply / close. `topicId` = add to that existing topic |
+| POST | `/sessions/:code/ai/grade-all` | **202, background**: Grade with AI every closed Explain's untagged answers, one activity after another (`HostState.aiGrade`: progress, counts, `changedIds` for Undo); 409 `NOTHING_TO_GRADE` when none |
 | POST | `/sessions/:code/ai/generate` | **202 `{ job }`, runs in the background** (see above); body `{ text (200–30 000 chars), count 1–8, kinds (MCQ / TRUE_FALSE / NUMERIC / EXPLAIN), note? (≤ 300) }` → `{ drafts }`, each valid for `POST /sessions/:code/activities`. Uploaded slides (PDF, .pptx incl. speaker notes, .docx, HTML, text; ≤ 8 files, ≤ 60 MB each) are read **in the browser** — files never reach the server, only their text |
 | POST | `/sessions/:code/ai/keypoints` | `{ keyPoints }` (≤ 5) from what happened in class (activities + how the class did, topics + replies); the Take-away editor fills them in, the instructor edits and publishes |
 | POST | `/activities/:id/ai/grade` | **Grade with AI** (one click): a closed Explain's untagged answers get Correct / Partial / Misconception on the server (the instructor's own tags are never changed); returns `{ graded, counts, groups: { label, tag, count }[], changedIds }` — the page shows what the AI found and offers Undo (clear `changedIds` through the normal tag endpoint) |
+
+## Laptop demo
+| GET | `/public/config` | `{ publicUrl }`: where phones should go (QR, projector "go to …"): `PUBLIC_URL`, else the tunnel address `npm run share` saved in `.getit-public-url` (https only), else null (the page uses its own address) |
 
 ## Health
 | GET | `/health` | `{ ok: true, db: true }` — used by the hosting platform and before the demo |

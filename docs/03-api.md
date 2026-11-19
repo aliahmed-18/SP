@@ -24,7 +24,11 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 ## Sessions (instructor)
 | GET | `/courses/:id/sessions` | list: id, code, topic, status, startedAt, joined, questions |
 | GET | `/sessions?courseId=<id\|none>` | same list for all my sessions (dashboard); `none` = sessions whose course was deleted |
-| POST | `/sessions` | `{ courseId?, topic, academicMode }` → `{ id, code }` (generate code, retry on collision) |
+| POST | `/sessions` | `{ courseId?, topic, academicMode, scheduledFor?, durationMin?, autoStart? }` → `{ id, code }` (generate code, retry on collision). Without `scheduledFor` the lecture is LIVE at once; with it (ISO time, ≥ now − 1 min, ≤ 366 days ahead) it is **SCHEDULED**: its code is reserved (unique among non-ENDED sessions), activities can be prepared but not launched (409) |
+| POST | `/sessions/:code/start` | **Start now**: SCHEDULED → LIVE (atomic; `startedAt` = now, so the 6 h limit counts from here), emits host + present snapshots; returns `HostState`. Already LIVE → same snapshot; ENDED → 409 |
+| PATCH | `/sessions/:code/schedule` | edit a planned lecture: `{ topic?, courseId?, scheduledFor?, durationMin?, autoStart? }` (≥ 1 field) → `HostState`; 409 `NOT_SCHEDULED` once it started |
+| DELETE | `/sessions/:code` | cancel a planned lecture (deletes it and its prepared activities) → 204; 409 `NOT_SCHEDULED` once it started |
+| GET | `/sessions/:id/calendar.ics` | **Add to calendar**: an iCalendar event (UTC times, end = start + length, join link + code, 15-minute reminder) |
 | GET | `/sessions/:code/host` | full **instructor snapshot** (see events doc `HostState`) |
 | POST | `/sessions/:code/end` | ends session, creates Takeaway draft |
 | GET | `/sessions/:code/host` (ended) | **is** the ended-session summary: the host page of an ended session shows every question, topic, result and the Take-away editor (no separate summary endpoint) |
@@ -53,7 +57,7 @@ Rule of thumb: **REST for loading and creating; Socket.io for live actions** (se
 | POST | `/sessions/:code/takeaway/publish` | publish (needs ≥ 1 key point) → emit `takeaway:published`. Saving again after publishing updates phones too |
 
 ## Student (no account, header `x-device-id`)
-| GET | `/public/sessions/:code` | `{ topic, status }` or 404 "That session doesn't exist or has expired." |
+| GET | `/public/sessions/:code` | `{ topic, status, scheduledFor }` or 404 "That session doesn't exist or has expired." A SCHEDULED lecture answers here (phones show a waiting room and poll every 15 s), but `join` and the socket refuse it until it is LIVE |
 | POST | `/public/sessions/:code/join` | registers Participant, returns **student snapshot** `StudentState` |
 | GET | `/public/sessions/:code/takeaway` | published Take-away (404 until published / after 24 h) |
 

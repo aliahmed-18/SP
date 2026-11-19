@@ -1,12 +1,12 @@
 import { Router, type Request } from 'express';
-import { codeParamSchema, deviceIdSchema, type PublicSessionInfo } from '@getit/shared';
+import { codeParamSchema, deviceIdSchema, INVALID_CODE_MESSAGE, type PublicSessionInfo } from '@getit/shared';
 import { HttpError } from '../lib/errors';
 import { hashDevice } from '../lib/deviceHash';
 import { publicUrl } from '../lib/public-url';
 import { parse } from '../lib/validate';
 import { buildStudentState } from '../realtime/broadcast';
 import { joinSession } from '../services/participants';
-import { getPublicSession } from '../services/sessions';
+import { findPublicSession, findScheduledPublic, getPublicSession } from '../services/sessions';
 
 export const publicRouter = Router();
 
@@ -26,8 +26,14 @@ publicRouter.get('/public/config', (_req, res) => {
 
 publicRouter.get('/public/sessions/:code', async (req, res) => {
   const { code } = parse(codeParamSchema, req.params);
-  const s = await getPublicSession(code);
-  const body: PublicSessionInfo = { topic: s.topic, status: s.status };
+  // A phone that opens a planned lecture's code early gets its start time (waiting screen).
+  const s = (await findPublicSession(code)) ?? (await findScheduledPublic(code));
+  if (!s) throw new HttpError(404, 'NOT_FOUND', INVALID_CODE_MESSAGE);
+  const body: PublicSessionInfo = {
+    topic: s.topic,
+    status: s.status,
+    scheduledFor: s.status === 'SCHEDULED' ? (s.scheduledFor?.toISOString() ?? null) : null,
+  };
   res.json(body);
 });
 

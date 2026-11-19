@@ -59,3 +59,12 @@ export function useCreateSession() {
     onSuccess: invalidate,
   });
 }
+
+/** "Start now" on a planned lecture. */
+export function useStartPlanned() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (code: string) => api(`/sessions/${code}/start`, { method: 'POST' }),
+    onSuccess: invalidate,
+  });
+}

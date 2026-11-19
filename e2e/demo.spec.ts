@@ -163,7 +163,9 @@ test('the demo, start to finish', async ({ page, context, browser }) => {
   expect(xlsx.suggestedFilename()).toMatch(/\.xlsx$/);
   await page.goto('/dashboard');
   // This session's own row (other runs may have left sessions with the same title).
-  await expect(page.locator(`main a[href="/s/${code}/host"]`)).toContainText('Ended');
+  await expect(
+    page.getByRole('list', { name: 'Sessions' }).locator(`a[href="/s/${code}/host"]`),
+  ).toContainText('Ended');
 
   // An iPhone-sized phone still renders the Take-away (Safari-like viewport).
   const iphone = await (await browser.newContext({ ...devices['iPhone 13'] })).newPage();

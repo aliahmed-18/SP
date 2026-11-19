@@ -22,8 +22,10 @@ Session.liveActivityId → the one LIVE activity (or null)
 
 ## Extra rules that Prisma can't express — add as raw SQL in the first migration
 ```sql
--- Join code must be unique among LIVE sessions (ENDED codes can be reused later)
-CREATE UNIQUE INDEX session_live_code_unique ON "Session"(code) WHERE status = 'LIVE';
+-- Join code must be unique among open (LIVE or SCHEDULED) sessions; ENDED codes can be reused later.
+-- (Originally `session_live_code_unique … WHERE status = 'LIVE'`; widened by the scheduled_sessions migration
+-- so a planned lecture's code stays reserved until it ends.)
+CREATE UNIQUE INDEX session_open_code_unique ON "Session"(code) WHERE status <> 'ENDED';
 -- Only one LIVE activity per session (backup for Session.liveActivityId)
 CREATE UNIQUE INDEX activity_one_live_per_session ON "Activity"("sessionId") WHERE status = 'LIVE';
 ```
@@ -37,6 +39,7 @@ CREATE UNIQUE INDEX activity_one_live_per_session ON "Activity"("sessionId") WHE
 | Answer Quick Check | check activity LIVE and round → insert Response (unique constraint catches doubles → return the existing answer, not an error) |
 | Close / Reveal / New round | update status/round → clear liveActivityId on close → bump version |
 | Me too | insert/delete MeToo row → recompute topic.meTooCount |
+| Start a planned lecture | `updateMany where status = SCHEDULED` → LIVE, `startedAt = now`, bump version (Start now and the auto-start sweep can't both win) |
 | End session | status ENDED, endedAt, close any LIVE activity, create Takeaway draft with top topics |
 
 ## Device hash
@@ -46,6 +49,7 @@ CREATE UNIQUE INDEX activity_one_live_per_session ON "Activity"("sessionId") WHE
 
 ## Expiry
 - On every access to a session (REST or socket) call `ensureNotExpired(session)`: if LIVE and `startedAt + 6h < now` → end it (same as End session).
+- **Planned lectures:** a SCHEDULED session keeps `scheduledFor`, `durationMin`, `autoStart`. The server sweep (every 30 s) starts due lectures with `autoStart` (SCHEDULED → LIVE, `startedAt = now`); with `autoStart = false` it waits for Start now. The 6 h limit counts from the real start.
 - Take-away readable by students until `endedAt + 24h`. Instructor keeps full history in the dashboard (they have an account).
 
 ## Seed (`npm run db:seed`)

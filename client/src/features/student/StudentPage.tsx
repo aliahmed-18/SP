@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, CircleStop } from 'lucide-react';
-import { useParams } from 'react-router';
+import { Navigate, useParams } from 'react-router';
 import { normalizeJoinCode } from '@getit/shared';
 import { LoadingState } from '@/components/brand/brand';
 import { ReconnectingBanner } from '@/components/layout/ReconnectingBanner';
@@ -19,9 +19,17 @@ import { useStudentState } from './use-student-state';
 /** `/s/:code` — the phone screen (shots 20–29). */
 export function StudentPage() {
   const code = normalizeJoinCode(useParams().code ?? '');
-  const { state, status, getSocket, applyMeToo, applyMyResponse, takeawayRev } = useStudentState(code);
+  const { state, status, refusal, getSocket, applyMeToo, applyMyResponse, takeawayRev } =
+    useStudentState(code);
 
-  if (status === 'refused') return <InvalidSession code={code} />;
+  // "Not found": maybe a planned lecture that hasn't started — /join shows its waiting room (or says the
+  // code is wrong). Any other refusal (e.g. a broken device id) can't be fixed there: say so here.
+  if (status === 'refused')
+    return refusal === 'SESSION_NOT_FOUND' ? (
+      <Navigate to={`/join/${code}`} replace />
+    ) : (
+      <InvalidSession code={code} />
+    );
   if (!state) return <LoadingState text="Joining the lecture…" />;
   // Keyed by session id so the local list/draft reload when the code points at a new lecture.
   return (

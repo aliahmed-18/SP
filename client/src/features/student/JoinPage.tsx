@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/layout/ErrorState';
 import { Button } from '@/components/ui/button';
 import { api, ApiRequestError } from '@/lib/api';
 import { InvalidSession } from './InvalidSession';
+import { WaitingRoom } from './WaitingRoom';
 
 /** `/join/:code` — what the QR opens. Checks the code, then goes to the student page. */
 export function JoinPage() {
@@ -16,6 +17,8 @@ export function JoinPage() {
     queryFn: () => api<PublicSessionInfo>(`/public/sessions/${code}`),
     enabled: valid,
     retry: (count, err) => !(err instanceof ApiRequestError && err.status === 404) && count < 2,
+    // A planned lecture: check every 15 s (and on focus) until it starts, then go in.
+    refetchInterval: (q) => (q.state.data?.status === 'SCHEDULED' ? 15_000 : false),
   });
 
   if (!valid) return <InvalidSession code={code} />;
@@ -31,5 +34,7 @@ export function JoinPage() {
       />
     );
   }
+  if (info.data.status === 'SCHEDULED')
+    return <WaitingRoom topic={info.data.topic} scheduledFor={info.data.scheduledFor} />;
   return <Navigate to={`/s/${code}`} replace />;
 }

@@ -68,6 +68,9 @@ export async function buildHostState(sessionId: string): Promise<HostState> {
       startedAt: s.startedAt.toISOString(),
       endedAt: s.endedAt?.toISOString() ?? null,
       courseId: s.courseId,
+      scheduledFor: s.scheduledFor?.toISOString() ?? null,
+      durationMin: s.durationMin,
+      autoStart: s.autoStart,
     },
     parts: parts.map(toHostPart),
     questions: questions.map(toHostQuestion),
@@ -143,6 +146,11 @@ export async function buildStudentState(sessionId: string, deviceHash: string): 
 
 // Domain events → socket events (raised by services after their transaction committed). Registered once.
 bus.on('session:joined', ({ sessionId, joinedCount }) => emitJoined(sessionId, joinedCount));
+// A planned lecture went LIVE: every open host / projector page gets the live session.
+bus.on('session:started', ({ sessionId }) => {
+  safeEmit(emitHostSnapshot(sessionId));
+  safeEmit(emitPresentSnapshot(sessionId));
+});
 bus.on('session:ended', ({ sessionId, endedAt }) => {
   emitSessionEnded(sessionId, endedAt).catch((err) => console.error('[getit] emit ended failed', err));
 });

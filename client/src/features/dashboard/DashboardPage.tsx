@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FolderPlus, MoreHorizontal, Pencil, Play, Radio, Trash2 } from 'lucide-react';
+import { CalendarPlus, FolderPlus, MoreHorizontal, Pencil, Play, Radio, Trash2 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { LoadingState } from '@/components/brand/brand';
@@ -25,10 +25,12 @@ import {
 import { UserMenu } from '@/features/auth/UserMenu';
 import { useMe } from '@/features/auth/use-me';
 import { cn } from '@/lib/utils';
+import { CalendarView } from './CalendarView';
 import { CourseDialog } from './CourseDialog';
 import { useCourses, useDeleteCourse, useSessions } from './queries';
 import { SessionList } from './SessionList';
 import { StartSessionDialog } from './StartSessionDialog';
+import { UpcomingList } from './UpcomingList';
 
 const NO_COURSE = 'none';
 
@@ -41,6 +43,14 @@ export function DashboardPage() {
   const [courseDialog, setCourseDialog] = useState<'new' | 'rename' | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
+  /** Calendar: the dialog opens on "Plan for later" for this day. */
+  const [planDay, setPlanDay] = useState<Date | null>(null);
+  const [planMode, setPlanMode] = useState<'now' | 'plan'>('now');
+  const openStart = (mode: 'now' | 'plan', day: Date | null = null) => {
+    setPlanMode(mode);
+    setPlanDay(day);
+    setStartOpen(true);
+  };
 
   const orphanSessions = useMemo(() => (sessions.data ?? []).filter((s) => !s.courseId), [sessions.data]);
   const liveSessions = useMemo(
@@ -80,9 +90,14 @@ export function DashboardPage() {
             <p className="text-muted-foreground">Welcome{me.data ? `, ${me.data.name}` : ''}</p>
             <h1 className="text-3xl font-semibold">Your lectures</h1>
           </div>
-          <Button size="lg" onClick={() => setStartOpen(true)}>
-            <Play /> Start session
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="lg" variant="outline" onClick={() => openStart('plan')}>
+              <CalendarPlus /> Plan a lecture
+            </Button>
+            <Button size="lg" onClick={() => openStart('now')}>
+              <Play /> Start session
+            </Button>
+          </div>
         </div>
 
         {liveSessions.length > 0 && (
@@ -104,6 +119,12 @@ export function DashboardPage() {
             ))}
           </section>
         )}
+
+        {/* Calendar: every lecture by day; plan new ones; the next planned ones beside it. */}
+        <div className="mb-8 grid gap-6 lg:grid-cols-[1fr_22rem]">
+          <CalendarView sessions={sessions.data} onPlan={(day) => openStart('plan', day)} />
+          <UpcomingList sessions={sessions.data} courses={courses.data} />
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
           <nav aria-label="Courses" className="flex flex-col gap-2">
@@ -187,7 +208,7 @@ export function DashboardPage() {
                   <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed p-10 text-center">
                     <p className="font-medium">No sessions yet</p>
                     <p className="text-sm text-muted-foreground">Start a session when your lecture begins.</p>
-                    <Button onClick={() => setStartOpen(true)}>
+                    <Button onClick={() => openStart('now')}>
                       <Play /> Start session
                     </Button>
                   </div>
@@ -205,7 +226,7 @@ export function DashboardPage() {
                   <Button variant="outline" onClick={() => setCourseDialog('new')}>
                     <FolderPlus /> New course
                   </Button>
-                  <Button onClick={() => setStartOpen(true)}>
+                  <Button onClick={() => openStart('now')}>
                     <Play /> Start session
                   </Button>
                 </div>
@@ -226,6 +247,8 @@ export function DashboardPage() {
         onOpenChange={setStartOpen}
         courses={courses.data}
         defaultCourseId={selectedCourse?.id ?? null}
+        initialMode={planMode}
+        initialDay={planDay}
       />
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>

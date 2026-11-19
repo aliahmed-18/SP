@@ -72,7 +72,11 @@ test('register → course → start session → 2 phones join → live joined co
 
   // Dashboard lists it as ended with 2 joined.
   await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: /Linear regression and correlation/ })).toContainText('Ended');
+  await expect(
+    page
+      .getByRole('list', { name: 'Sessions' })
+      .getByRole('link', { name: /Linear regression and correlation/ }),
+  ).toContainText('Ended');
 });
 
 test('seeded demo account logs in and sees last week’s lecture', async ({ page }) => {
@@ -82,7 +86,12 @@ test('seeded demo account logs in and sees last week’s lecture', async ({ page
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole('heading', { name: 'ITCS 444 — Mobile Development' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Linear regression and correlation/ }).last()).toBeVisible();
+  await expect(
+    page
+      .getByRole('list', { name: 'Sessions' })
+      .getByRole('link', { name: /Linear regression and correlation/ })
+      .last(),
+  ).toBeVisible();
 });
 
 test('wrong password shows one generic error', async ({ page }) => {

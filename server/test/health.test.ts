@@ -30,10 +30,10 @@ describe('database constraints from the first migration', () => {
   it('has the two partial unique indexes', async () => {
     const rows = await prisma.$queryRaw<{ indexname: string }[]>`
       SELECT indexname FROM pg_indexes
-      WHERE indexname IN ('session_live_code_unique', 'activity_one_live_per_session')`;
+      WHERE indexname IN ('session_open_code_unique', 'activity_one_live_per_session')`;
     expect(rows.map((r) => r.indexname).sort()).toEqual([
       'activity_one_live_per_session',
-      'session_live_code_unique',
+      'session_open_code_unique', // a code is unique among LIVE and SCHEDULED sessions
     ]);
   });
 });

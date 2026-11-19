@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ChevronDown,
   CircleStop,
@@ -34,6 +34,7 @@ import { ActivitiesSection } from './activities/ActivitiesSection';
 import { EndSessionDialog } from './EndSessionDialog';
 import { HostContext } from './host-context';
 import { InviteCard } from './InviteCard';
+import { ScheduledBanner } from './ScheduledBanner';
 import { QaPanel } from './QaPanel';
 import { QrDialog } from './QrDialog';
 import { useHostState } from './use-host-state';
@@ -41,6 +42,14 @@ import { useHostState } from './use-host-state';
 export function HostPage() {
   const code = normalizeJoinCode(useParams().code ?? '');
   const { state, setState, status, refusal, liveStats, getSocket } = useHostState(code);
+  // A planned lecture that starts by itself while this page is open: say so.
+  const sessionStatus = state?.session.status;
+  const prevStatus = useRef(sessionStatus);
+  useEffect(() => {
+    if (prevStatus.current === 'SCHEDULED' && sessionStatus === 'LIVE')
+      toast.success('Your lecture has started', { description: 'Students can join now.' });
+    prevStatus.current = sessionStatus;
+  }, [sessionStatus]);
   const [qrOpen, setQrOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   // Phones and tablets show one side at a time (laptops show both side by side).
@@ -65,6 +74,7 @@ export function HostPage() {
 
   const { session } = state;
   const ended = session.status === 'ENDED';
+  const scheduled = session.status === 'SCHEDULED';
 
   async function endSession() {
     try {
@@ -95,7 +105,7 @@ export function HostPage() {
           }
           right={
             <UserMenu>
-              {!ended && (
+              {session.status === 'LIVE' && (
                 <DropdownMenuItem variant="destructive" onSelect={() => setEndOpen(true)}>
                   <CircleStop /> End session
                 </DropdownMenuItem>
@@ -140,6 +150,8 @@ export function HostPage() {
 
             {ended && <TakeawayEditor code={session.code} endedAt={session.endedAt} />}
 
+            {scheduled && <ScheduledBanner session={session} onStarted={setState} />}
+
             {!ended && (
               <InviteCard
                 code={session.code}
@@ -150,7 +162,7 @@ export function HostPage() {
 
             <ActivitiesSection state={state} liveStats={liveStats} getSocket={getSocket} />
 
-            {!ended && (
+            {session.status === 'LIVE' && (
               <div className="flex flex-col items-center gap-2">
                 <Button
                   size="lg"

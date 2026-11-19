@@ -136,6 +136,7 @@ export function ActivitiesSection({
                 live={liveStats[a.id]}
                 anotherLive={liveActivityId !== null && liveActivityId !== a.id}
                 ended={ended}
+                canRun={session.status === 'LIVE'}
                 getSocket={getSocket}
                 onEdit={() =>
                   a.type === 'EXPLAIN'

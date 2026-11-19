@@ -66,7 +66,7 @@ aiRouter.post('/sessions/:code/ai/generate', requireInstructor, async (req, res)
   const { code } = parse(codeParamSchema, req.params);
   const input = parse(aiGenerateSchema, req.body);
   const s = await getHostSession(instructorId(res), code);
-  if (s.status !== 'LIVE') throw new HttpError(409, 'SESSION_ENDED', 'This session has ended.');
+  if (s.status === 'ENDED') throw new HttpError(409, 'SESSION_ENDED', 'This session has ended.');
   if (isAiJobRunning(s.id))
     throw new HttpError(409, 'AI_JOB_RUNNING', 'Drafts are already being prepared for this lecture.');
   assertReady(res);

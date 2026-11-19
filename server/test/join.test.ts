@@ -13,7 +13,11 @@ describe('student join (public, anonymous)', () => {
     const { agent } = await newInstructor();
     const s = await newSession(agent, 'Linear regression and correlation');
     const ok = await request(app).get(`/api/public/sessions/${s.code.toLowerCase()}`);
-    expect(ok.body).toEqual({ topic: 'Linear regression and correlation', status: 'LIVE' });
+    expect(ok.body).toEqual({
+      topic: 'Linear regression and correlation',
+      status: 'LIVE',
+      scheduledFor: null,
+    });
     const missing = await request(app).get('/api/public/sessions/ZZZZZ');
     expect(missing.status).toBe(404);
     expect(missing.body.error.message).toBe("That session doesn't exist or has expired.");

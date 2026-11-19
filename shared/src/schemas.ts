@@ -62,8 +62,24 @@ export const createSessionSchema = z.object({
     .min(1, 'Enter the lecture topic.')
     .max(LIMITS.lectureTopicMax, `Topic must be ${LIMITS.lectureTopicMax} characters or fewer.`),
   academicMode: z.boolean().default(true),
+  /** Calendar: plan it for later (ISO date-time, UTC). Omitted/null = start now. */
+  scheduledFor: z.string().datetime({ offset: true, message: 'Choose a date and time.' }).nullish(),
+  durationMin: z.number().int().min(10).max(360).optional(),
+  autoStart: z.boolean().default(true),
 });
 export type CreateSessionInput = z.input<typeof createSessionSchema>;
+
+/** Edit a SCHEDULED lecture (topic, course, time, length, auto-start). */
+export const updateScheduleSchema = z
+  .object({
+    topic: createSessionSchema.shape.topic.optional(),
+    courseId: z.string().uuid().nullish(),
+    scheduledFor: z.string().datetime({ offset: true, message: 'Choose a date and time.' }).optional(),
+    durationMin: z.number().int().min(10).max(360).nullish(),
+    autoStart: z.boolean().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: 'Nothing to change.' });
+export type UpdateScheduleInput = z.input<typeof updateScheduleSchema>;
 
 export const idParamSchema = z.object({ id: z.string().uuid('Not found.') });
 export const codeParamSchema = z.object({ code: joinCodeSchema });

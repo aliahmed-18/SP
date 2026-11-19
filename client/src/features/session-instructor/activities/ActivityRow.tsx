@@ -52,6 +52,7 @@ export function ActivityRow({
   live,
   anotherLive,
   ended,
+  canRun,
   getSocket,
   onEdit,
   onMove,
@@ -63,6 +64,8 @@ export function ActivityRow({
   live: ActivityStats | undefined;
   anotherLive: boolean;
   ended: boolean;
+  /** The session is LIVE: activities can be launched (a planned lecture is prepared, not run). */
+  canRun: boolean;
   getSocket: () => GetitSocket | null;
   onEdit: () => void;
   onMove: (dir: -1 | 1) => void;
@@ -139,7 +142,7 @@ export function ActivityRow({
             <Eye /> Review
           </Button>
         )}
-        {a.status === 'DRAFT' && !a.aiDraft && !ended && !open && (
+        {a.status === 'DRAFT' && !a.aiDraft && canRun && !open && (
           <Button
             size="sm"
             onClick={() => void life('activity:launch')}
@@ -220,7 +223,7 @@ export function ActivityRow({
                 <CircleCheck /> Confirm draft
               </Button>
             )}
-            {a.status === 'DRAFT' && !a.aiDraft && !ended && (
+            {a.status === 'DRAFT' && !a.aiDraft && canRun && (
               <Button
                 onClick={() => void life('activity:launch')}
                 disabled={busy || anotherLive}

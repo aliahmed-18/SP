@@ -1,7 +1,8 @@
-import { ChevronRight, MessageCircleQuestion, Users } from 'lucide-react';
+import { CalendarClock, ChevronRight, MessageCircleQuestion, Users } from 'lucide-react';
 import { Link } from 'react-router';
 import type { SessionListItem } from '@getit/shared';
 import { Badge } from '@/components/ui/badge';
+import { lectureTime } from './lecture-time';
 
 const dateFmt = new Intl.DateTimeFormat('en-GB', {
   weekday: 'short',
@@ -26,10 +27,14 @@ export function SessionList({ sessions }: { sessions: SessionListItem[] }) {
                   <Badge variant="attention">
                     <span className="size-1.5 rounded-full bg-attention" aria-hidden /> Live · {s.code}
                   </Badge>
+                ) : s.status === 'SCHEDULED' ? (
+                  <Badge variant="accent">
+                    <CalendarClock aria-hidden /> Planned · {s.code}
+                  </Badge>
                 ) : (
                   <Badge variant="secondary">Ended</Badge>
                 )}
-                <span className="text-xs text-muted-foreground">{dateFmt.format(new Date(s.startedAt))}</span>
+                <span className="text-xs text-muted-foreground">{dateFmt.format(lectureTime(s))}</span>
               </div>
               <p className="truncate font-medium" dir="auto">
                 {s.topic}

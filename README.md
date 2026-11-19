@@ -30,7 +30,8 @@ Senior project. Stack: React 19 + Vite + Tailwind v4 + shadcn/ui · Express 5 + 
 ## Features
 
 ### For the instructor (laptop)
-- **Accounts and courses:** email + password login, courses, a dashboard of every lecture (live and ended).
+- **Accounts and courses:** email + password login, courses, a dashboard of every lecture (planned, live and ended).
+- **Calendar — plan lectures ahead:** a month calendar on the dashboard shows every lecture. **Plan a lecture** (or pick a day) sets the date, time and length; its join code is reserved at once, so you can print it on slides. Prepare its activities in advance; it **starts by itself** at its time (or waits for **Start now**, your choice), can be edited or cancelled, and **Add to calendar** downloads an `.ics` event (with a 15-minute reminder) for Google / Outlook / Apple Calendar. Students who open the code early see a waiting screen with a countdown and join automatically when it starts.
 - **Live session:** 5-letter join code + QR, live "Joined" count, *Start presenting* opens the projector window.
 - **Ask (Q&A):** anonymous questions arrive live (Arabic and English, right-to-left text supported). Mark as addressed, group similar questions into **Topics**, students tap **Me too**, reply **in class** or **in writing** (the reply reaches every phone). **New part** starts a fresh list; **Copy questions** pastes into Excel.
 - **Quick Check:** Multiple choice, True / False, Write a number (with tolerance). Launch → live answer count → close → results → show the answer. Students say how **sure** they are; results show **% correct** and **Sure and wrong**, with a suggestion (*Re-explain* / *Discuss and vote again* / *Move on*) and **vote again** rounds.
@@ -172,7 +173,7 @@ Keep that terminal open; `Ctrl + C` stops the app.
 
 ## Running a lecture
 
-1. **Dashboard → Start session**, type the lecture topic (optionally pick a course).
+1. **Dashboard → Start session**, type the lecture topic (optionally pick a course). Or **Plan a lecture** for later: choose the date, time and length — the lecture starts by itself at that time (or when you press **Start now**), and you prepare it in the meantime.
 2. Prepare activities (Multiple choice, True / False, Write a number, Explain), copy them from an earlier lecture, or use **AI generation**.
 3. **Start presenting** opens the projector window (drag it to the projector, press **F** for full screen). Students scan the QR or type the code.
 4. During the lecture: questions arrive in **Q&A**; group them into topics (or **Group with AI**); press **→** to run each activity; discuss, vote again, reveal.

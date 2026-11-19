@@ -16,6 +16,7 @@ datasource db {
 
 enum SessionStatus {
   LIVE
+  SCHEDULED // planned in the calendar: prepare activities now, starts at scheduledFor (auto) or by hand
   ENDED
 }
 
@@ -91,7 +92,10 @@ model Session {
   presentActivityId String? // Phase 0: activity the projector is showing (stays set after CLOSED/REVEALED)
   projected        Json? // Phase 0: ProjectedItem on the projector ({ kind: welcome|blank|topic|misconception, id? }) or null
   presentSettings  Json? // Phase 5: projector settings { timerSec: 0|30|60|90, autoReveal: boolean } — survive a projector refresh
-  startedAt        DateTime      @default(now())
+  startedAt        DateTime      @default(now()) // SCHEDULED: the planned start; set to the real start when it goes LIVE
+  scheduledFor     DateTime? // when the lecture is planned (null = started at once)
+  durationMin      Int? // planned length, for the calendar (and the .ics event)
+  autoStart        Boolean       @default(true) // SCHEDULED: go LIVE by itself at scheduledFor
   endedAt          DateTime?
   participants     Participant[]
   parts            Part[]
@@ -102,6 +106,7 @@ model Session {
 
   @@index([code])
   @@index([instructorId, startedAt])
+  @@index([status, scheduledFor]) // the auto-start sweep
 }
 
 // One row per device that joined. Used for the "joined" count and limits. No identity.

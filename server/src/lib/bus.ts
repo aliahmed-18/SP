@@ -6,6 +6,8 @@ import { EventEmitter } from 'node:events';
  */
 export type DomainEvents = {
   'session:ended': [{ sessionId: string; endedAt: Date }];
+  /** A SCHEDULED lecture went LIVE (its time came, or the instructor pressed Start now). */
+  'session:started': [{ sessionId: string }];
   'session:joined': [{ sessionId: string; joinedCount: number }];
 };
 

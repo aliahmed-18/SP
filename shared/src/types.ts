@@ -3,7 +3,7 @@ import type { Answer, RoundStats } from './rules';
 // Shared names (CLAUDE.md §5) and DTO shapes (docs/04-realtime-events.md).
 // Kept as plain string unions so client code never imports Prisma.
 
-export const SESSION_STATUS = ['LIVE', 'ENDED'] as const;
+export const SESSION_STATUS = ['LIVE', 'SCHEDULED', 'ENDED'] as const;
 export type SessionStatus = (typeof SESSION_STATUS)[number];
 
 export const ACTIVITY_TYPE = ['QUICK_CHECK', 'EXPLAIN'] as const;
@@ -21,6 +21,9 @@ export type TopicStatus = (typeof TOPIC_STATUS)[number];
 /** Rule 9: sessions auto-end after 6 h LIVE; Take-away visible 24 h after end. */
 export const SESSION_MAX_LIVE_MS = 6 * 60 * 60 * 1000;
 export const TAKEAWAY_VISIBLE_MS = 24 * 60 * 60 * 1000;
+/** Calendar: a lecture can be planned up to a year ahead; lengths offered when scheduling. */
+export const SCHEDULE_MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
+export const LECTURE_LENGTHS = [50, 75, 90, 120, 180] as const;
 
 export type ApiError = { error: { code: string; message: string } };
 export type HealthResponse = { ok: boolean; db: boolean };
@@ -42,6 +45,10 @@ export type SessionListItem = {
   joined: number;
   questions: number;
   activities: number;
+  /** Calendar: planned start (null = started at once), planned length, auto-start. */
+  scheduledFor: string | null;
+  durationMin: number | null;
+  autoStart: boolean;
 };
 
 export type CreatedSession = { id: string; code: string };
@@ -58,6 +65,10 @@ export type HostSession = {
   startedAt: string;
   endedAt: string | null;
   courseId: string | null;
+  /** SCHEDULED: when it starts and whether it starts by itself. */
+  scheduledFor: string | null;
+  durationMin: number | null;
+  autoStart: boolean;
 };
 
 // ─── Q&A DTOs (no device hash, ever) ─────────────────────────────────────────
@@ -222,7 +233,8 @@ export type StudentState = {
   takeawayPublished: boolean;
 };
 
-export type PublicSessionInfo = { topic: string; status: SessionStatus };
+/** SCHEDULED: the phone shows a waiting screen with the start time, then joins when it goes LIVE. */
+export type PublicSessionInfo = { topic: string; status: SessionStatus; scheduledFor: string | null };
 
 // ─── Take-away ──────────────────────────────────────────────────────────────
 
